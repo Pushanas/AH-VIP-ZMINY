@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ASSET_PAIRS, DIRECTIONS, Signal, VipCode } from '../types';
+import { motion, AnimatePresence } from "motion/react";
+import { useState, useEffect } from 'react';
+import { ASSET_PAIRS, DIRECTIONS, Signal } from '../types';
 import { copyToClipboard } from '../utils';
 import { 
   TrendingUp, TrendingDown, Clock, Sparkles, Copy, Check, 
@@ -68,14 +69,36 @@ const stylizeText = (text: string): string => {
   }).join('');
 };
 
-interface SignalGeneratorProps {
-  activatedCode: string;
-  onLockSession: () => void;
-  lang: 'ar' | 'en';
-  codes: VipCode[];
-}
 
-export default function SignalGenerator({ activatedCode, onLockSession, lang, codes }: SignalGeneratorProps) {
+const parseTimeStrToMinutes = (timeStr: string) => {
+  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return 0;
+  let h = parseInt(match[1]);
+  const m = parseInt(match[2]);
+  const ampm = match[3].toUpperCase();
+  if (h === 12) h = ampm === 'AM' ? 0 : 12;
+  else if (ampm === 'PM') h += 12;
+  return h * 60 + m;
+};
+
+const getEgyptCurrentMinutes = () => {
+  const egyptTimeStr = new Date().toLocaleTimeString('en-US', { 
+     timeZone: 'Africa/Cairo', 
+     hour: '2-digit', 
+     minute: '2-digit', 
+     hour12: true 
+   });
+   return parseTimeStrToMinutes(egyptTimeStr);
+};
+
+const getEgyptDateString = () => {
+  return new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Cairo' });
+};
+
+interface SignalGeneratorProps {
+  lang: "ar" | "en";
+}
+export default function SignalGenerator({ lang }: SignalGeneratorProps) {
   // Setup default start and end hours/minutes based on Egypt Time
   const [startHour, setStartHour] = useState(initialTimes.start.hour);
   const [startMinute, setStartMinute] = useState(initialTimes.start.minute);
@@ -91,6 +114,34 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [isExpired, setIsExpired] = useState(false);
+
+  useEffect(() => {
+    const checkSession = () => {
+      const saved = localStorage.getItem('ah_vip_daily_session');
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          const today = getEgyptDateString();
+          if (data.date === today) {
+            setSignals(data.signals);
+            if (data.signals && data.signals.length > 0) {
+              const lastSignal = data.signals[data.signals.length - 1];
+              const lastSignalMinutes = parseTimeStrToMinutes(lastSignal.time);
+              const currentMinutes = getEgyptCurrentMinutes();
+              if (currentMinutes > lastSignalMinutes) {
+                setIsExpired(true);
+              }
+            }
+          }
+        } catch(e) {}
+      }
+    };
+    checkSession();
+    const interval = setInterval(checkSession, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
 
   const t = {
     ar: {
@@ -215,6 +266,19 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
     setSignals([]);
 
     setTimeout(() => {
+      const saved = localStorage.getItem('ah_vip_daily_session');
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          const today = getEgyptDateString();
+          if (data.date === today && data.signals && data.signals.length > 0) {
+            setSignals(data.signals);
+            setIsGenerating(false);
+            return;
+          }
+        } catch(e) {}
+      }
+
       // If end time is less than start time, assume next day
       if (endTimeMinutes < startTimeMinutes) {
         endTimeMinutes += 24 * 60; // 24 hours rollover
@@ -227,9 +291,13 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
       }
 
       const generated: Signal[] = [];
-      let currentTime = startTimeMinutes + 3; // start 3 minutes in
+      const duration = endTimeMinutes - startTimeMinutes;
+      const maxSignals = 10;
+      let currentTime = startTimeMinutes + 3;
+      
+      const avgGap = Math.max(3, Math.floor(duration / maxSignals));
 
-      while (currentTime < endTimeMinutes) {
+      for (let i = 0; i < maxSignals && currentTime < endTimeMinutes; i++) {
         const timeStr = formatMinutesTo12Hour(currentTime);
         const randomPair = ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)];
         const randomDir = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
@@ -240,11 +308,17 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
           direction: randomDir
         });
 
-        // Add a random gap of 3 to 8 minutes as described
-        const randomMinutesToAdd = Math.floor(Math.random() * 6) + 3;
+        const randomMinutesToAdd = avgGap + Math.floor(Math.random() * 5) - 2;
         currentTime += randomMinutesToAdd;
       }
 
+      
+      const sessionData = {
+        date: getEgyptDateString(),
+        signals: generated
+      };
+      localStorage.setItem('ah_vip_daily_session', JSON.stringify(sessionData));
+      
       setSignals(generated);
       setIsGenerating(false);
     }, 1200);
@@ -283,52 +357,40 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
     return s.pair.toLowerCase().includes(q) || s.direction.toLowerCase().includes(q);
   });
 
-  const codeInfo = codes.find(c => c.code.toUpperCase() === activatedCode.toUpperCase());
-  let remainingHours: number | null = null;
-  if (codeInfo?.expiresAt) {
-    const diffMs = new Date(codeInfo.expiresAt).getTime() - Date.now();
-    remainingHours = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
+
+  if (isExpired) {
+    return (
+      <motion.div initial={{opacity:0, scale: 0.95}} animate={{opacity:1, scale: 1}} transition={{duration:0.5}} className="w-full bg-brand-card/90 backdrop-blur-2xl border border-red-500/30 rounded-[24px] p-8 shadow-2xl relative shadow-red-500/10 text-center flex flex-col items-center justify-center min-h-[400px]">
+        <div className="absolute inset-0 cyber-grid opacity-[0.05] pointer-events-none rounded-[24px]" />
+        <AlertTriangle className="w-20 h-20 text-red-500 mb-6 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse" />
+        <h2 className="text-2xl sm:text-3xl font-black text-white mb-4 tracking-tight">
+          {lang === 'ar' ? 'انتهت تجربتك المجانية' : 'Free Trial Ended'}
+        </h2>
+        <p className="text-gray-400 text-sm sm:text-base mb-8 font-medium leading-relaxed max-w-md mx-auto">
+          {lang === 'ar' 
+            ? 'لقد انتهت صفقاتك اليومية بالكامل. يرجى الانتظار 24 ساعة للحصول على صفقات جديدة، أو انضم لقناة الـ VIP للوصول غير المحدود.' 
+            : 'Your daily signals have concluded. Please wait 24 hours for new signals, or join the VIP channel for unlimited access.'}
+        </p>
+        <a 
+          href="https://t.me/AH_QUOTEX" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="inline-flex w-full sm:w-auto px-8 py-4 rounded-[20px] bg-gradient-to-r from-[#229ED9] to-[#1b80b0] hover:brightness-110 text-white font-black transition-all duration-300 items-center justify-center gap-3 shadow-[0_0_20px_rgba(34,158,217,0.4)] hover:shadow-[0_0_30px_rgba(34,158,217,0.6)] transform hover:-translate-y-1 active:scale-95"
+        >
+          <ExternalLink className="w-5 h-5" />
+          <span className="tracking-wide">{lang === 'ar' ? 'الانضمام لقناة VIP' : 'Join VIP Channel'}</span>
+        </a>
+      </motion.div>
+    );
   }
 
   return (
-    <div className="w-full flex flex-col gap-8">
-      {/* 4. Activation card */}
-      <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-6 shadow-2xl relative overflow-hidden shadow-brand-primary/5">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-brand-primary shrink-0" />
-            <span className="text-xs text-gray-300 font-sans font-semibold">
-              {currentT.activeCode}
-            </span>
-          </div>
-          
-          <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-mono text-brand-primary select-all bg-brand-primary/10 border border-brand-primary/20 px-4 py-2 rounded-[20px] text-xs font-bold tracking-wider">
-                {activatedCode}
-              </span>
-              {remainingHours !== null && (
-                <span className="font-sans text-[11px] bg-brand-accent/10 text-brand-accent px-4 py-1.5 rounded-[20px] border border-brand-accent/20 font-extrabold">
-                  {lang === 'ar' ? `متبقي: ${remainingHours} ساعة` : `Expires in: ${remainingHours} hrs`}
-                </span>
-              )}
-            </div>
-
-            <button
-              onClick={onLockSession}
-              className="px-5 py-2.5 rounded-[20px] border border-brand-accent/35 hover:border-brand-accent text-brand-accent hover:bg-brand-accent/15 font-bold transition-all duration-300 cursor-pointer text-xs shrink-0 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_15px_rgba(255,47,146,0.2)]"
-            >
-              {currentT.logoutBtn}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Config card */}
+    <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{duration:0.5}} className="w-full flex flex-col gap-8">
+{/* 5. Config card */}
       <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-7 shadow-2xl relative shadow-brand-primary/5">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="w-5 h-5 text-brand-primary animate-pulse" />
-          <h2 className="text-md font-extrabold text-white font-sans tracking-tight">AH VIP Config</h2>
+          <h2 className="text-md font-extrabold text-white font-sans tracking-tight">AH VIP SIGNAL</h2>
         </div>
         
         {/* Divider line */}
@@ -432,11 +494,15 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
           )}
 
           {/* Main CTA button */}
-          <button
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
             onClick={handleGenerate}
             disabled={isGenerating}
-            className="w-full py-4.5 mt-4 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent hover:brightness-110 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_20px_rgba(36,232,255,0.35)] text-white font-black transition-all duration-300 cursor-pointer text-sm shadow-lg border border-brand-primary/40 flex items-center justify-center gap-2.5"
+            className="w-full py-4.5 mt-4 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent hover:brightness-110 text-white font-black transition-all duration-300 cursor-pointer text-sm shadow-[0_0_20px_rgba(36,232,255,0.2)] hover:shadow-[0_0_30px_rgba(36,232,255,0.5)] border border-brand-primary/40 flex items-center justify-center gap-2.5 overflow-hidden relative"
           >
+            <div className="absolute inset-0 w-full h-full metallic-shine pointer-events-none opacity-50" />
+
             {isGenerating ? (
               <>
                 <RefreshCw className="w-4.5 h-4.5 animate-spin" />
@@ -448,10 +514,9 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                 <span>{currentT.genBtn}</span>
               </>
             )}
-          </button>
+          </motion.button>
         </div>
       </div>
-
       {/* 6. Output/result card */}
       <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-6 shadow-2xl min-h-[220px] flex flex-col justify-center shadow-brand-primary/5">
         {isGenerating ? (
@@ -509,10 +574,12 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                   const isCall = signal.direction === 'CALL';
                   const isCopied = copiedIndex === idx;
                   return (
-                    <div 
-                      key={idx} 
-                      className="flex items-center justify-between gap-3 p-4 rounded-[20px] bg-brand-bg/80 border border-brand-primary/20 hover:border-brand-primary/45 shadow-sm hover:shadow-[0_0_15px_rgba(36,232,255,0.15)] hover:bg-brand-bg/95 transition-all duration-300 animate-slide-up transform hover:-translate-y-1"
-                      style={{ animationDelay: `${Math.min(idx * 0.05, 0.5)}s`, animationFillMode: 'both' }}
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      transition={{ duration: 0.4, delay: Math.min(idx * 0.05, 0.5), type: 'spring', bounce: 0.4 }}
+                      className="flex items-center justify-between gap-3 p-4 rounded-[20px] bg-brand-bg/80 border border-brand-primary/20 hover:border-brand-primary/50 shadow-sm hover:shadow-[0_0_20px_rgba(36,232,255,0.25)] hover:bg-brand-bg/95 transition-colors cursor-pointer group"
                     >
                       <div className="flex items-center gap-3">
                         {/* Decorative ⧉ symbol for realism */}
@@ -549,7 +616,7 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                           {isCopied ? <Check className="w-3.5 h-3.5 text-brand-primary" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })
               )}
@@ -570,6 +637,6 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
           <span>{lang === 'ar' ? 'قناة التليجرام الرسمية للأدمن: @AH_QUOTEX' : 'Official Admin Telegram Channel: @AH_QUOTEX'}</span>
         </a>
       </div>
-    </div>
+    </motion.div>
   );
 }

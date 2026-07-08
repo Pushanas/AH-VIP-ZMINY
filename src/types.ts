@@ -1,14 +1,3 @@
-export interface VipCode {
-  code: string;
-  type: 'single_use' | 'duration';
-  durationDays: number; // For 'duration' type
-  createdAt: string;
-  expiresAt: string | null;
-  usedCount: number;
-  maxUses: number;
-  status: 'active' | 'used' | 'expired' | 'disabled';
-}
-
 export interface Signal {
   time: string;
   pair: string;

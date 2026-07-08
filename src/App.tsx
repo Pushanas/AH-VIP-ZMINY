@@ -1,255 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { VipCode, Language } from './types';
-import CodeGate from './components/CodeGate';
+import { Globe, Sparkles } from 'lucide-react';
 import SignalGenerator from './components/SignalGenerator';
-import AdminPanel from './components/AdminPanel';
-import { Globe, Shield, Sparkles, AlertCircle, HelpCircle } from 'lucide-react';
-import { auth, googleAuthProvider } from './lib/firebase.ts';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-
-const SEED_CODES: VipCode[] = [
-  {
-    code: 'AHVIP-DEMO-TEST',
-    type: 'single_use',
-    durationDays: 0,
-    createdAt: new Date().toISOString(),
-    expiresAt: null,
-    usedCount: 0,
-    maxUses: 1,
-    status: 'active'
-  },
-  {
-    code: 'AHVIP-7DAYS-PASS',
-    type: 'duration',
-    durationDays: 7,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    usedCount: 0,
-    maxUses: 99999,
-    status: 'active'
-  }
-];
+import { Language } from './types';
 
 export default function App() {
   const [lang, setLang] = useState<Language>('ar');
-  const [codes, setCodes] = useState<VipCode[]>([]);
-  const [activatedCode, setActivatedCode] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'gate' | 'generator' | 'admin'>('gate');
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  
-  // Triple tap logic for logo -> admin
-  const [clickCount, setClickCount] = useState(0);
-  const [lastClickTime, setLastClickTime] = useState(0);
-  const [flashActive, setFlashActive] = useState(false);
-
-  // Egypt standard time clock
-  const [egyptTime, setEgyptTime] = useState('');
-
-  useEffect(() => {
-    const updateEgyptTime = () => {
-      try {
-        const options: Intl.DateTimeFormatOptions = {
-          timeZone: 'Africa/Cairo',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true
-        };
-        const rawStr = new Date().toLocaleTimeString('en-US', options);
-        const formatted = lang === 'ar' 
-          ? rawStr.replace('AM', 'ص').replace('PM', 'م')
-          : rawStr;
-        setEgyptTime(formatted);
-      } catch (e) {
-        setEgyptTime(new Date().toLocaleTimeString());
-      }
-    };
-    updateEgyptTime();
-    const interval = setInterval(updateEgyptTime, 1000);
-    return () => clearInterval(interval);
-  }, [lang]);
-
-  // Sync auth state
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (usr) => {
-      if (usr) {
-        setCurrentUser(usr);
-        // Register user in SQL database
-        try {
-          await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ uid: usr.uid, email: usr.email || '' })
-          });
-        } catch (e) {
-          console.error('Error registering user:', e);
-        }
-      } else {
-        const savedGuest = localStorage.getItem('ah_guest_session');
-        if (savedGuest) {
-          try {
-            setCurrentUser(JSON.parse(savedGuest));
-          } catch (e) {
-            setCurrentUser(null);
-          }
-        } else {
-          setCurrentUser(null);
-        }
-      }
-      setIsAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, [lang]);
-
-  const fetchCodes = async () => {
-    try {
-      const res = await fetch('/api/vip-codes');
-      if (res.ok) {
-        const data = await res.json();
-        setCodes(data);
-      } else {
-        setCodes(SEED_CODES);
-      }
-    } catch (err) {
-      console.error(err);
-      setCodes(SEED_CODES);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setIsAuthLoading(true);
-    const guestUid = `guest-${Math.random().toString(36).substring(2, 9)}`;
-    const guestUser = {
-      uid: guestUid,
-      email: `${guestUid}@ah-vip.com`,
-      displayName: lang === 'ar' ? 'عضو زائر VIP' : 'VIP Guest Member',
-      isGuest: true
-    };
-    
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ uid: guestUser.uid, email: guestUser.email })
-      });
-      if (res.ok) {
-        localStorage.setItem('ah_guest_session', JSON.stringify(guestUser));
-        setCurrentUser(guestUser);
-      } else {
-        localStorage.setItem('ah_guest_session', JSON.stringify(guestUser));
-        setCurrentUser(guestUser);
-      }
-    } catch (e) {
-      console.error('Error registering guest:', e);
-      localStorage.setItem('ah_guest_session', JSON.stringify(guestUser));
-      setCurrentUser(guestUser);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  // Load codes and session on init
-  useEffect(() => {
-    fetchCodes();
-
-    const storedSession = localStorage.getItem('ah_vip_active_session');
-    if (storedSession) {
-      setActivatedCode(storedSession);
-      setCurrentView('generator');
-    }
-  }, []);
-
-  const handleUpdateCodes = (updatedCodes: VipCode[]) => {
-    setCodes(updatedCodes);
-  };
-
-  const handleActivateCode = (codeStr: string) => {
-    fetchCodes();
-    setActivatedCode(codeStr);
-    localStorage.setItem('ah_vip_active_session', codeStr);
-    setCurrentView('generator');
-  };
-
-  const handleLockSession = () => {
-    setActivatedCode(null);
-    localStorage.removeItem('ah_vip_active_session');
-    setCurrentView('gate');
-  };
-
-  // Secret admin logo tapping mechanism
-  const handleLogoClick = () => {
-    const now = Date.now();
-    // Allow up to 1.5 seconds between clicks
-    if (now - lastClickTime < 1500) {
-      const nextCount = clickCount + 1;
-      if (nextCount >= 3) {
-        // Double security barrier & visual cue
-        setClickCount(0);
-        setLastClickTime(0);
-        setFlashActive(true);
-        setTimeout(() => {
-          setFlashActive(false);
-          setCurrentView('admin');
-        }, 400);
-      } else {
-        setClickCount(nextCount);
-        setLastClickTime(now);
-      }
-    } else {
-      setClickCount(1);
-      setLastClickTime(now);
-    }
-  };
+  const egyptTime = new Date().toLocaleTimeString('en-US', {
+    timeZone: 'Africa/Cairo',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
 
   return (
-    <div className="min-h-screen bg-mesh-gradient text-white relative overflow-x-hidden font-sans pb-16 selection:bg-brand-primary selection:text-brand-bg" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      
-      {/* Dynamic Screen Flash feedback on admin entry */}
-      <AnimatePresence>
-        {flashActive && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-white/20 backdrop-blur-sm z-50 pointer-events-none flex items-center justify-center"
-          >
-            <div className="bg-brand-primary text-brand-bg font-bold px-6 py-4 rounded-xl text-lg glow-primary animate-bounce shadow-2xl">
-              ⚡ ACCESSING SECURE SYSTEM ⚡
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Floating particles background */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        {/* Glowing Orbs */}
-        <div className="absolute top-[10%] left-[-10%] w-[300px] h-[300px] rounded-full bg-brand-secondary/15 blur-[90px] animate-orb-1" />
-        <div className="absolute bottom-[20%] right-[-10%] w-[350px] h-[350px] rounded-full bg-brand-primary/10 blur-[100px] animate-orb-2" />
-        <div className="absolute top-[50%] left-[20%] w-[250px] h-[250px] rounded-full bg-brand-accent/8 blur-[80px] animate-orb-3" />
-        
-        {/* Cathode scan line overlay */}
+    <div className="min-h-screen bg-brand-bg text-white font-sans overflow-x-hidden selection:bg-brand-primary/30 selection:text-white relative">
+      <div className="fixed inset-0 cyber-grid opacity-[0.03] pointer-events-none" />
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-secondary/10 rounded-full blur-[120px]" />
+        <div className="absolute top-[40%] left-[50%] w-[30%] h-[30%] bg-brand-accent/5 rounded-full blur-[100px] transform -translate-x-1/2" />
         <div className="absolute inset-0 scan-line pointer-events-none opacity-20" />
       </div>
-      {/* Main Container (Centered, 520px limit) */}
+
       <div className="relative z-10 w-full max-w-[520px] mx-auto px-3 sm:px-5 pt-6 sm:pt-8 flex flex-col">
-        {/* 1. Legendary Top Banner (Navbar) */}
+        {/* Legendary Top Banner (Navbar) */}
         <div className="sticky top-3 z-40 w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[20px] sm:rounded-[24px] px-2 sm:px-4 py-2 flex items-center justify-between shadow-[0_4px_30px_rgba(36,232,255,0.15)] mb-6 sm:mb-8 transition-all duration-300 gap-1 sm:gap-2">
           {/* Logo & Branding */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {/* Miniature Holographic Cyber Hexagon Logo (Enlarged & outstanding) */}
             <div className="relative w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0">
               <div className="absolute inset-0 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent opacity-60 cyber-hexagon animate-spin [animation-duration:10s] shadow-[0_0_15px_rgba(36,232,255,0.45)]" />
               <div className="absolute inset-[1.5px] bg-brand-bg cyber-hexagon" />
               
               <button 
-                onClick={handleLogoClick}
                 className="absolute inset-[3px] bg-gradient-to-br from-[#160c2d] via-brand-bg to-[#041d1a] flex flex-col items-center justify-center cyber-hexagon overflow-hidden group cursor-pointer"
                 title="AH VIP"
               >
@@ -307,32 +91,13 @@ export default function App() {
           </div>
         </div>
 
-        {/* 1.5 Sub-bar User Profile Info */}
-        {currentUser && (
-          <div className="w-full bg-brand-card/60 backdrop-blur-xl border border-brand-primary/15 rounded-[20px] px-5 py-3 flex items-center justify-between text-xs mb-6 shadow-lg shadow-black/10">
-            <span className="text-[10.5px] text-gray-300 font-semibold truncate max-w-[280px]">
-              {lang === 'ar' ? '👤 العضو:' : '👤 Member:'} <span className="text-brand-primary font-extrabold">{currentUser.displayName || currentUser.email}</span>
-            </span>
-            <button
-              onClick={async () => {
-                localStorage.removeItem('ah_guest_session');
-                try {
-                  await signOut(auth);
-                } catch (e) {
-                  console.error('Sign out error:', e);
-                }
-                setCurrentUser(null);
-              }}
-              className="text-[10px] text-brand-accent hover:text-brand-accent/80 font-black cursor-pointer uppercase tracking-wider underline decoration-brand-accent/40 hover:decoration-brand-accent transition-colors duration-200"
-            >
-              {lang === 'ar' ? 'تسجيل الخروج' : 'Log Out'}
-            </button>
-          </div>
-        )}
-
-        {/* 3. Main Title Section */}
-        {currentView !== 'admin' && (
-          <div className="text-center mb-10 px-3">
+        {/* Main Title Section */}
+        <div className="text-center mb-10 px-3">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          >
             <h1 className="text-3xl sm:text-4xl font-black font-sans tracking-tight text-white leading-tight">
               {lang === 'ar' ? (
                 <>
@@ -344,94 +109,42 @@ export default function App() {
                 </>
               )}
             </h1>
-            <p className="text-xs sm:text-sm text-gray-400 mt-3 font-sans leading-relaxed max-w-sm mx-auto font-medium">
-              {lang === 'ar' 
-                ? 'الجيل القادم من خوارزميات التداول الفورية خصيصاً لأعضاء النخبة' 
-                : 'The next-generation live signals suite tailored for elite users.'}
-            </p>
-            
-            <div className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-brand-accent/15 via-brand-secondary/25 to-brand-primary/15 border border-brand-accent/30 shadow-md shadow-brand-accent/5 animate-pulse">
-              <span className="text-[11px] sm:text-xs font-extrabold font-sans text-transparent bg-clip-text bg-gradient-to-r from-white via-brand-accent to-brand-primary tracking-wide">
-                {lang === 'ar' ? '⚡️ صفقات زمنية نارية وحصرية ⚡️' : '⚡️ High-Octane Timed Deals ⚡️'}
-              </span>
-            </div>
-          </div>
-        )}
+          </motion.div>
+          <motion.p
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+            className="text-xs sm:text-sm text-gray-400 mt-3 font-sans leading-relaxed max-w-sm mx-auto font-medium"
+          >
+            {lang === 'ar' 
+              ? 'الجيل القادم من خوارزميات التداول الفورية متاحة الان للجميع بآداء متطور'
+              : 'The next-generation live signals suite, now available for everyone with enhanced performance.'}
+          </motion.p>
+          
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.2, type: "spring" }}
+            className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-brand-accent/15 via-brand-secondary/25 to-brand-primary/15 border border-brand-accent/30 shadow-md shadow-brand-accent/5 animate-pulse"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-brand-primary" />
+            <span className="text-[11px] sm:text-xs font-extrabold font-sans text-transparent bg-clip-text bg-gradient-to-r from-white via-brand-accent to-brand-primary tracking-wide">
+              {lang === 'ar' ? '⚡️ صفقات نارية دقيقة ومفتوحة للجميع ⚡️' : '⚡️ High-Octane Deals Open for All ⚡️'}
+            </span>
+          </motion.div>
+        </div>
 
         {/* View Router */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={isAuthLoading ? 'loading' : !currentUser ? 'auth' : currentView}
+            key="generator"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.4, type: "spring", bounce: 0.3 }}
             className="w-full"
           >
-            {isAuthLoading ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <div className="w-11 h-11 border-2 border-brand-primary border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(36,232,255,0.2)]" />
-                <p className="text-[10px] text-gray-400 mt-5 font-mono tracking-widest uppercase">CONNECTING SECURE NETWORKS...</p>
-              </div>
-            ) : !currentUser ? (
-              <div className="w-full glass-panel p-7 sm:p-9 rounded-[20px] border border-brand-primary/30 shadow-2xl relative overflow-hidden text-center bg-brand-card/85 backdrop-blur-2xl shadow-brand-primary/5">
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-brand-primary/30 rounded-tl-[20px] pointer-events-none" />
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-brand-primary/30 rounded-tr-[20px] pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-brand-primary/30 rounded-bl-[20px] pointer-events-none" />
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-brand-primary/30 rounded-br-[20px] pointer-events-none" />
-                
-                {/* Abstract glowing decorations */}
-                <div className="absolute -top-16 -right-16 w-32 h-32 bg-brand-primary/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-brand-accent/10 rounded-full blur-3xl pointer-events-none" />
-
-                <Shield className="w-12 h-12 text-brand-primary mx-auto mb-5 animate-pulse drop-shadow-[0_0_10px_rgba(36,232,255,0.4)]" />
-                <h3 className="text-xl font-black text-white mb-3 font-sans tracking-tight">
-                  {lang === 'ar' ? 'بوابة التحقق المشفرة' : 'Encrypted Identity Verification'}
-                </h3>
-                <p className="text-xs sm:text-sm text-gray-400 mb-8 leading-relaxed font-sans font-semibold max-w-sm mx-auto">
-                  {lang === 'ar' 
-                    ? 'يرجى تفعيل الاتصال الآمن بقاعدة البيانات لتشغيل مولد الإشارات التفاعلي.' 
-                    : 'Please initialize a secure connection to the real-time database to unlock the signals engine.'}
-                </p>
-
-                {/* Primary: Direct Secure Connection (Guest Access, 100% iframe-compatible) */}
-                <button
-                  onClick={handleGuestLogin}
-                  className="w-full py-4 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary hover:brightness-110 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_20px_rgba(36,232,255,0.4)] text-brand-bg font-black transition-all duration-300 cursor-pointer text-sm shadow-lg border border-brand-primary/40 tracking-wider font-sans flex items-center justify-center gap-2.5"
-                >
-                  <Sparkles className="w-4.5 h-4.5 text-brand-bg animate-pulse" />
-                  <span>{lang === 'ar' ? 'اتصال مباشر وآمن وسريع 🚀' : 'Fast Direct Secure Connection 🚀'}</span>
-                </button>
-              </div>
-            ) : (
-              <>
-                {currentView === 'gate' && (
-                  <CodeGate 
-                    onActivate={handleActivateCode} 
-                    lang={lang} 
-                    codes={codes} 
-                  />
-                )}
-
-                {currentView === 'generator' && activatedCode && (
-                  <SignalGenerator 
-                    activatedCode={activatedCode} 
-                    onLockSession={handleLockSession} 
-                    lang={lang} 
-                    codes={codes}
-                  />
-                )}
-
-                {currentView === 'admin' && (
-                  <AdminPanel 
-                    onClose={() => setCurrentView(activatedCode ? 'generator' : 'gate')} 
-                    lang={lang} 
-                    codes={codes} 
-                    onUpdateCodes={handleUpdateCodes} 
-                  />
-                )}
-              </>
-            )}
+            <SignalGenerator lang={lang} />
           </motion.div>
         </AnimatePresence>
 
@@ -446,18 +159,18 @@ export default function App() {
           
           {/* Luxurious Owner Signature Badge */}
           <div className="mt-5 flex flex-col items-center justify-center gap-2.5">
-            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-primary/10 via-brand-secondary/5 to-brand-primary/10 border border-brand-primary/30 shadow-lg shadow-brand-primary/5 hover:border-brand-primary/50 transition-colors duration-300">
+            <motion.div whileHover={{ scale: 1.05 }} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-primary/10 via-brand-secondary/5 to-brand-primary/10 border border-brand-primary/30 shadow-lg shadow-brand-primary/5 hover:border-brand-primary/50 transition-colors duration-300">
               <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-ping" />
               <span className="text-[9px] text-brand-primary font-extrabold tracking-widest uppercase font-mono">
                 {lang === 'ar' ? 'المالك: أنس بيك 👑' : 'OWNER: ANAS BIK 👑'}
               </span>
-            </div>
-            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-primary/10 via-brand-secondary/5 to-brand-primary/10 border border-brand-primary/30 shadow-lg shadow-brand-primary/5 hover:border-brand-primary/50 transition-colors duration-300">
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.05 }} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-primary/10 via-brand-secondary/5 to-brand-primary/10 border border-brand-primary/30 shadow-lg shadow-brand-primary/5 hover:border-brand-primary/50 transition-colors duration-300">
               <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-ping" />
               <span className="text-[9px] text-brand-primary font-extrabold tracking-widest uppercase font-mono">
                 {lang === 'ar' ? 'المالك: حازم بيك 👑' : 'OWNER: HAZEM BIK 👑'}
               </span>
-            </div>
+            </motion.div>
           </div>
         </footer>
       </div>
