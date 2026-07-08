@@ -6,6 +6,32 @@ import {
   Plus, RefreshCw, Ticket, CheckCircle2, XCircle, Ban, Lock
 } from 'lucide-react';
 
+const AnimatedCounter = ({ value }: { value: number }) => {
+  const [displayValue, setDisplayValue] = useState(0);
+  
+  useEffect(() => {
+    let start = displayValue;
+    const end = value;
+    if (start === end) return;
+    const duration = 1000;
+    const startTime = performance.now();
+    
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 4);
+      setDisplayValue(Math.floor(start + (end - start) * ease));
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      }
+    };
+    const animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [value]);
+  
+  return <span>{displayValue}</span>;
+};
+
 interface AdminPanelProps {
   onClose: () => void;
   lang: 'ar' | 'en';
@@ -205,42 +231,42 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
 
   if (!isAuthenticated) {
     return (
-      <div className="w-full">
-        <div className="glass-panel p-6 sm:p-8 rounded-[24px] border-brand-fuchsia/20 shadow-xl relative overflow-hidden">
+      <div className="w-full animate-slide-up">
+        <div className="glass-panel p-7 sm:p-9 rounded-[24px] shadow-2xl relative overflow-hidden bg-brand-card/90 backdrop-blur-2xl shadow-brand-accent/5">
           {/* Cyberpunk corner bracket markings */}
-          <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-brand-fuchsia/20 rounded-tl-xl pointer-events-none" />
-          <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-brand-fuchsia/20 rounded-tr-xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-brand-fuchsia/20 rounded-bl-xl pointer-events-none" />
-          <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-brand-fuchsia/20 rounded-br-xl pointer-events-none" />
+          <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-brand-accent/30 rounded-tl-[24px] pointer-events-none" />
+          <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-brand-accent/30 rounded-tr-[24px] pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-brand-accent/30 rounded-bl-[24px] pointer-events-none" />
+          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-brand-accent/30 rounded-br-[24px] pointer-events-none" />
 
           {/* Abstract glowing decorations */}
-          <div className="absolute -top-16 -right-16 w-32 h-32 bg-brand-fuchsia/10 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-brand-purple/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -top-16 -right-16 w-32 h-32 bg-brand-accent/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-brand-secondary/10 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="flex flex-col items-center mb-6 relative">
-            <div className="p-4 rounded-2xl bg-brand-fuchsia/10 border border-brand-fuchsia/20 mb-4 animate-pulse text-brand-fuchsia">
+          <div className="flex flex-col items-center mb-8 relative">
+            <div className="p-4 rounded-[20px] bg-brand-accent/10 border border-brand-accent/20 mb-5 animate-pulse text-brand-accent shadow-md shadow-brand-accent/5">
               <Lock className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-brand-silver to-white text-center tracking-tight font-sans glow-text-silver">
+            <h2 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-brand-silver to-white text-center tracking-tight font-sans glow-text-silver">
               {currentT.passTitle}
             </h2>
-            <p className="text-gray-300 text-xs text-center mt-3 font-sans font-medium">
+            <p className="text-gray-400 text-xs sm:text-sm text-center mt-3.5 font-sans font-medium">
               {currentT.passSub}
             </p>
           </div>
 
-          <form onSubmit={handleAuthenticate} className="space-y-5 relative">
+          <form onSubmit={handleAuthenticate} className="space-y-6 relative">
             <div>
               <input
                 type="password"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
                 placeholder={currentT.passPlaceholder}
-                className="w-full px-4 py-3.5 rounded-xl glass-input text-center text-sm tracking-widest placeholder:tracking-normal font-mono font-bold"
+                className="w-full px-5 py-4 rounded-[20px] glass-input text-center text-sm tracking-widest placeholder:tracking-normal font-mono font-bold"
                 autoFocus
               />
               {errorMsg && (
-                <p className="text-brand-fuchsia text-[11px] mt-3 text-center font-bold animate-shake bg-brand-fuchsia/5 py-2 px-3 rounded-lg border border-brand-fuchsia/10">
+                <p className="text-brand-accent text-[11px] mt-4 text-center font-bold animate-shake bg-brand-accent/5 py-2.5 px-3.5 rounded-[20px] border border-brand-accent/15 shadow-sm">
                   {errorMsg}
                 </p>
               )}
@@ -248,7 +274,7 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
 
             <button
               type="submit"
-              className="w-full py-4 rounded-xl bg-gradient-to-r from-brand-fuchsia via-[#8B1E9A] to-brand-fuchsia hover:brightness-110 active:scale-[0.98] text-white font-extrabold transition-all duration-300 cursor-pointer text-sm shadow-md border border-brand-fuchsia/30 tracking-wider font-sans"
+              className="w-full py-4 rounded-[20px] bg-gradient-to-r from-brand-accent via-brand-secondary to-brand-accent hover:brightness-110 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_20px_rgba(255,47,146,0.35)] text-white font-extrabold transition-all duration-300 cursor-pointer text-sm shadow-lg border border-brand-accent/30 tracking-wider font-sans"
             >
               {currentT.authBtn}
             </button>
@@ -256,7 +282,7 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
 
           <button
             onClick={onClose}
-            className="w-full mt-4 py-2 text-xs text-gray-400 hover:text-brand-teal font-sans font-bold transition-all duration-200 cursor-pointer"
+            className="w-full mt-5 py-2.5 text-xs text-gray-400 hover:text-brand-primary font-sans font-extrabold transition-all duration-300 cursor-pointer hover:-translate-y-1 active:scale-[0.97]"
           >
             {lang === 'ar' ? '← الرجوع للخلف' : '← Back to main'}
           </button>
@@ -266,71 +292,71 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 py-8">
+    <div className="w-full max-w-6xl mx-auto px-4 py-8 animate-slide-up">
       {/* Admin header */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 glass-panel p-6 rounded-2xl border-brand-teal/30">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-5 mb-8 glass-panel p-6 rounded-[24px] border-brand-primary/25 bg-brand-card/85 backdrop-blur-xl shadow-2xl">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Shield className="w-5 h-5 text-brand-teal" />
-            <span className="text-xs font-mono font-bold text-brand-teal uppercase tracking-widest">
+            <Shield className="w-5 h-5 text-brand-primary" />
+            <span className="text-[10px] font-mono font-black text-brand-primary uppercase tracking-widest">
               SECURE ADMIN SPACE
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight glow-text-teal">
+          <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight glow-text-teal">
             {currentT.title}
           </h1>
-          <p className="text-gray-400 text-xs mt-1">
+          <p className="text-gray-400 text-xs mt-1.5 font-sans font-semibold">
             {currentT.sub}
           </p>
         </div>
 
         <button
           onClick={onClose}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-brand-fuchsia/10 hover:bg-brand-fuchsia/20 text-brand-fuchsia border border-brand-fuchsia/30 hover:border-brand-fuchsia/60 transition-all duration-300 cursor-pointer font-sans text-sm font-semibold"
+          className="flex items-center gap-2 px-6 py-3.5 rounded-[20px] bg-brand-accent/10 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:border-brand-accent/60 transition-all duration-300 cursor-pointer font-sans text-sm font-black transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_15px_rgba(255,47,146,0.25)]"
         >
           <LogOut className="w-4 h-4" />
           {currentT.exitBtn}
         </button>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="glass-panel p-5 rounded-2xl border-brand-teal/20 flex items-center justify-between">
+    {/* Stats row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div className="glass-panel p-5.5 rounded-[24px] border-brand-primary/20 bg-brand-card/65 backdrop-blur-lg shadow-xl flex items-center justify-between group hover:-translate-y-1 transition-all duration-300">
           <div>
-            <p className="text-xs text-gray-400 font-sans">{currentT.total}</p>
-            <p className="text-3xl font-extrabold text-white mt-1 font-mono">{totalCodes}</p>
+            <p className="text-xs text-gray-400 font-sans font-semibold">{currentT.total}</p>
+            <p className="text-3xl font-black text-white mt-1 font-mono"><AnimatedCounter value={totalCodes} /></p>
           </div>
-          <div className="p-3 rounded-xl bg-brand-teal/10 border border-brand-teal/20 text-brand-teal">
+          <div className="p-3.5 rounded-[20px] bg-brand-primary/10 border border-brand-primary/20 text-brand-primary shadow-md group-hover:scale-110 transition-transform">
             <Ticket className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-5 rounded-2xl border-brand-teal/20 flex items-center justify-between">
+        <div className="glass-panel p-5.5 rounded-[24px] border-brand-primary/20 bg-brand-card/65 backdrop-blur-lg shadow-xl flex items-center justify-between group hover:-translate-y-1 transition-all duration-300">
           <div>
-            <p className="text-xs text-gray-400 font-sans">{currentT.active}</p>
-            <p className="text-3xl font-extrabold text-brand-teal mt-1 font-mono">{activeCodes}</p>
+            <p className="text-xs text-gray-400 font-sans font-semibold">{currentT.active}</p>
+            <p className="text-3xl font-black text-brand-primary mt-1 font-mono"><AnimatedCounter value={activeCodes} /></p>
           </div>
-          <div className="p-3 rounded-xl bg-brand-teal/10 border border-brand-teal/20 text-brand-teal">
+          <div className="p-3.5 rounded-[20px] bg-brand-primary/10 border border-brand-primary/20 text-brand-primary shadow-md group-hover:scale-110 transition-transform">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-5 rounded-2xl border-brand-teal/20 flex items-center justify-between">
+        <div className="glass-panel p-5.5 rounded-[24px] border-brand-primary/20 bg-brand-card/65 backdrop-blur-lg shadow-xl flex items-center justify-between group hover:-translate-y-1 transition-all duration-300">
           <div>
-            <p className="text-xs text-gray-400 font-sans">{currentT.used}</p>
-            <p className="text-3xl font-extrabold text-brand-fuchsia mt-1 font-mono">{usedCodes}</p>
+            <p className="text-xs text-gray-400 font-sans font-semibold">{currentT.used}</p>
+            <p className="text-3xl font-black text-brand-accent mt-1 font-mono"><AnimatedCounter value={usedCodes} /></p>
           </div>
-          <div className="p-3 rounded-xl bg-brand-fuchsia/10 border border-brand-fuchsia/20 text-brand-fuchsia">
+          <div className="p-3.5 rounded-[20px] bg-brand-accent/10 border border-brand-accent/20 text-brand-accent shadow-md group-hover:scale-110 transition-transform">
             <XCircle className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-5 rounded-2xl border-brand-teal/20 flex items-center justify-between">
+        <div className="glass-panel p-5.5 rounded-[24px] border-brand-primary/20 bg-brand-card/65 backdrop-blur-lg shadow-xl flex items-center justify-between group hover:-translate-y-1 transition-all duration-300">
           <div>
-            <p className="text-xs text-gray-400 font-sans">{currentT.disabled}</p>
-            <p className="text-3xl font-extrabold text-gray-400 mt-1 font-mono">{disabledCodes}</p>
+            <p className="text-xs text-gray-400 font-sans font-semibold">{currentT.disabled}</p>
+            <p className="text-3xl font-black text-gray-400 mt-1 font-mono"><AnimatedCounter value={disabledCodes} /></p>
           </div>
-          <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-gray-400">
+          <div className="p-3.5 rounded-[20px] bg-white/5 border border-white/10 text-gray-400 shadow-sm group-hover:scale-110 transition-transform">
             <Ban className="w-6 h-6" />
           </div>
         </div>
@@ -338,24 +364,24 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Code Generator Form */}
-        <div className="lg:col-span-1 glass-panel p-6 rounded-2xl border-brand-teal/30 h-fit">
-          <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/5">
-            <Plus className="w-5 h-5 text-brand-teal" />
-            <h2 className="text-lg font-bold text-white">{currentT.genTitle}</h2>
+        <div className="lg:col-span-1 glass-panel p-7 rounded-[24px] border-brand-primary/25 bg-brand-card/85 backdrop-blur-xl shadow-2xl h-fit">
+          <div className="flex items-center gap-2 mb-5 pb-4 border-b border-white/5">
+            <Plus className="w-5 h-5 text-brand-primary" />
+            <h2 className="text-lg font-black text-white font-sans">{currentT.genTitle}</h2>
           </div>
 
-          <div className="space-y-5">
+          <div className="space-y-6">
             <div>
-              <label className="block text-xs text-gray-400 mb-2 font-sans">
+              <label className="block text-xs font-bold text-gray-300 mb-3 font-sans">
                 {lang === 'ar' ? 'نوع الكود وصلاحيته' : 'Code validity type'}
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   onClick={() => setCodeType('single_use')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-semibold cursor-pointer transition-all duration-300 ${
+                  className={`py-3.5 px-4 rounded-[20px] border text-xs font-bold cursor-pointer transition-all duration-300 transform hover:-translate-y-1 active:scale-[0.98] ${
                     codeType === 'single_use'
-                      ? 'bg-brand-teal/20 border-brand-teal text-brand-teal'
+                      ? 'bg-brand-primary/20 border-brand-primary text-brand-primary shadow-md shadow-brand-primary/5'
                       : 'border-white/10 text-gray-400 hover:border-white/20'
                   }`}
                 >
@@ -364,9 +390,9 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
                 <button
                   type="button"
                   onClick={() => setCodeType('duration')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-semibold cursor-pointer transition-all duration-300 ${
+                  className={`py-3.5 px-4 rounded-[20px] border text-xs font-bold cursor-pointer transition-all duration-300 transform hover:-translate-y-1 active:scale-[0.98] ${
                     codeType === 'duration'
-                      ? 'bg-brand-teal/20 border-brand-teal text-brand-teal'
+                      ? 'bg-brand-primary/20 border-brand-primary text-brand-primary shadow-md shadow-brand-primary/5'
                       : 'border-white/10 text-gray-400 hover:border-white/20'
                   }`}
                 >
@@ -377,7 +403,7 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
 
             {codeType === 'duration' && (
               <div>
-                <label className="block text-xs text-gray-400 mb-2 font-sans">
+                <label className="block text-xs font-bold text-gray-300 mb-2.5 font-sans">
                   {currentT.daysNum}
                 </label>
                 <input
@@ -386,14 +412,14 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
                   max="365"
                   value={durationDays}
                   onChange={(e) => setDurationDays(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg glass-input font-mono text-sm"
+                  className="w-full px-4 py-3 rounded-[20px] glass-input font-mono text-sm font-semibold"
                 />
               </div>
             )}
 
             <button
               onClick={handleGenerateCode}
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-brand-teal to-blue-600 hover:from-brand-teal/80 hover:to-blue-600/80 text-white font-semibold transition-all duration-300 cursor-pointer shadow-lg hover:shadow-brand-teal/20 border border-brand-teal/40 font-sans text-sm flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent hover:brightness-110 text-white font-black transition-all duration-300 cursor-pointer shadow-xl hover:shadow-[0_0_15px_rgba(36,232,255,0.3)] border border-brand-primary/40 font-sans text-sm flex items-center justify-center gap-2.5 transform hover:-translate-y-1 active:scale-[0.98]"
             >
               <RefreshCw className="w-4 h-4 animate-spin-slow" />
               {currentT.genBtn}
@@ -402,20 +428,20 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
         </div>
 
         {/* Existing Codes Table */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border-brand-teal/20">
-          <div className="flex justify-between items-center mb-4 pb-4 border-b border-white/5">
-            <h2 className="text-lg font-bold text-white">
+        <div className="lg:col-span-2 glass-panel p-7 rounded-[24px] border-brand-primary/25 bg-brand-card/85 backdrop-blur-xl shadow-2xl">
+          <div className="flex justify-between items-center mb-5 pb-4 border-b border-white/5">
+            <h2 className="text-lg font-black text-white font-sans">
               {lang === 'ar' ? 'الأكواد النشطة والتاريخ' : 'Generated Codes Inventory'}
             </h2>
-            <span className="text-xs font-mono bg-brand-teal/10 text-brand-teal px-2 py-1 rounded">
+            <span className="text-xs font-mono bg-brand-primary/10 text-brand-primary px-3 py-1.5 rounded-full border border-brand-primary/20 font-black">
               {codes.length} {lang === 'ar' ? 'كود' : 'codes'}
             </span>
           </div>
 
           {codes.length === 0 ? (
-            <div className="py-12 flex flex-col items-center justify-center text-center text-gray-500">
-              <Ticket className="w-12 h-12 mb-3 opacity-35 text-brand-teal" />
-              <p className="font-sans text-sm max-w-sm">{currentT.noCodes}</p>
+            <div className="py-16 flex flex-col items-center justify-center text-center text-gray-500">
+              <Ticket className="w-14 h-14 mb-4 opacity-35 text-brand-primary" />
+              <p className="font-sans text-sm font-medium max-w-sm">{currentT.noCodes}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -430,26 +456,26 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
                 </thead>
                 <tbody className="divide-y divide-white/5 text-xs">
                   {codes.map((c) => {
-                    const isCopied = copiedCode === c.code;
-                    return (
+                     const isCopied = copiedCode === c.code;
+                     return (
                       <tr key={c.code} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="py-3.5 px-4 font-mono font-bold text-white">
-                          <div className="flex items-center gap-2">
-                            <span className="select-all text-sm tracking-wider">{c.code}</span>
-                            <button
-                              onClick={() => handleCopy(c.code)}
-                              className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-brand-teal transition-all cursor-pointer"
-                              title={currentT.copy}
-                            >
-                              {isCopied ? <Check className="w-3.5 h-3.5 text-brand-teal" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                          <div className="text-[10px] text-gray-500 mt-0.5 font-sans">
-                            {new Date(c.createdAt).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}
-                          </div>
+                        <td className="py-4 px-4 font-mono font-black text-white">
+                           <div className="flex items-center gap-2">
+                             <span className="select-all text-sm tracking-wider">{c.code}</span>
+                             <button
+                               onClick={() => handleCopy(c.code)}
+                               className="p-1.5 rounded-[20px] hover:bg-white/10 text-gray-400 hover:text-brand-primary transition-all cursor-pointer border border-transparent hover:border-white/5 transform active:scale-[0.9]"
+                               title={currentT.copy}
+                             >
+                               {isCopied ? <Check className="w-3.5 h-3.5 text-brand-primary" /> : <Copy className="w-3.5 h-3.5" />}
+                             </button>
+                           </div>
+                           <div className="text-[10px] text-gray-500 mt-1 font-sans font-semibold">
+                             {new Date(c.createdAt).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}
+                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium font-sans ${
+                        <td className="py-4 px-4 text-center">
+                          <span className={`inline-block px-3 py-1 rounded-[20px] text-[10px] font-black font-sans ${
                             c.type === 'single_use' 
                               ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' 
                               : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
@@ -457,22 +483,22 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
                             {c.type === 'single_use' ? currentT.codeType_single : `${c.durationDays} ${lang === 'ar' ? 'أيام' : 'days'}`}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold font-sans ${
+                        <td className="py-4 px-4 text-center">
+                          <span className={`inline-block px-3 py-1 rounded-[20px] text-[10px] font-black font-sans ${
                             c.status === 'active'
                               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                               : c.status === 'used'
-                              ? 'bg-brand-fuchsia/10 text-brand-fuchsia border border-brand-fuchsia/20'
+                              ? 'bg-brand-accent/10 text-brand-accent border border-brand-accent/20'
                               : 'bg-white/5 text-gray-400 border border-white/10'
                           }`}>
                             {c.status === 'active' ? currentT.status_active : c.status === 'used' ? currentT.status_used : currentT.status_disabled}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="py-4 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => handleToggleStatus(c.code)}
-                              className={`p-1.5 rounded-lg border text-[10px] font-semibold cursor-pointer transition-all duration-200 ${
+                              className={`p-2 px-3 rounded-[20px] border text-[10px] font-black cursor-pointer transition-all duration-300 transform active:scale-[0.93] ${
                                 c.status === 'active'
                                   ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20'
                                   : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20'
@@ -482,7 +508,7 @@ export default function AdminPanel({ onClose, lang, codes, onUpdateCodes }: Admi
                             </button>
                             <button
                               onClick={() => handleDeleteCode(c.code)}
-                              className="p-1.5 rounded-lg bg-brand-fuchsia/10 hover:bg-brand-fuchsia/20 text-brand-fuchsia border border-brand-fuchsia/20 hover:border-brand-fuchsia/40 transition-all cursor-pointer"
+                              className="p-2 rounded-[20px] bg-brand-accent/10 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/20 hover:border-brand-accent/40 transition-all cursor-pointer transform active:scale-[0.93]"
                               title={currentT.delete}
                             >
                               <Trash2 className="w-3.5 h-3.5" />

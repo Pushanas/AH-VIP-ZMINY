@@ -3,7 +3,8 @@ import { ASSET_PAIRS, DIRECTIONS, Signal, VipCode } from '../types';
 import { copyToClipboard } from '../utils';
 import { 
   TrendingUp, TrendingDown, Clock, Sparkles, Copy, Check, 
-  Search, RefreshCw, KeyRound, ExternalLink, HelpCircle
+  Search, RefreshCw, KeyRound, ExternalLink, HelpCircle,
+  ChevronDown, AlertTriangle
 } from 'lucide-react';
 
 // Helper to get current Egypt time parts for defaults
@@ -89,6 +90,7 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [timeError, setTimeError] = useState<string | null>(null);
 
   const t = {
     ar: {
@@ -143,6 +145,36 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
 
   const currentT = t[lang];
 
+  const CustomSelect = ({ value, onChange, options, label, colorClass = "brand-primary" }: any) => {
+    const borderColorHover = colorClass === "brand-accent" ? "hover:border-brand-accent/50" : "hover:border-brand-primary/50";
+    const borderColorFocus = colorClass === "brand-accent" ? "focus:border-brand-accent" : "focus:border-brand-primary";
+    const shadowFocus = colorClass === "brand-accent" ? "focus:shadow-[0_0_15px_rgba(255,47,146,0.25)]" : "focus:shadow-[0_0_15px_rgba(36,232,255,0.25)]";
+    const textGroupHover = colorClass === "brand-accent" ? "group-hover:text-brand-accent" : "group-hover:text-brand-primary";
+    const borderBase = colorClass === "brand-accent" ? "border-brand-accent/20" : "border-brand-primary/20";
+    
+    return (
+      <div className="flex flex-col gap-1.5 w-full">
+        <div className="relative group w-full">
+          <select
+            value={value}
+            onChange={onChange}
+            className={`w-full appearance-none bg-brand-bg/60 border ${borderBase} ${borderColorHover} ${borderColorFocus} rounded-[16px] py-3 pl-4 pr-8 text-center text-sm font-mono font-bold cursor-pointer transition-all duration-300 text-white focus:outline-none shadow-sm ${shadowFocus} group-hover:bg-brand-bg/80`}
+          >
+            {options.map((opt: any) => (
+              <option key={opt.value} value={opt.value} className="bg-brand-card text-white">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <div className={`absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 ${textGroupHover} transition-colors`}>
+            <ChevronDown className="w-4 h-4" />
+          </div>
+        </div>
+        <span className="text-[10px] text-gray-400 font-sans px-1 font-semibold text-center transition-colors group-hover:text-gray-300">{label}</span>
+      </div>
+    );
+  };
+
   // Convert hours/minutes/AM-PM to total minutes from midnight
   const getMinutesFromMidnight = (hourStr: string, minStr: string, amPm: 'AM' | 'PM') => {
     let h = parseInt(hourStr);
@@ -170,17 +202,28 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
   };
 
   const handleGenerate = () => {
+    setTimeError(null);
+    const startTimeMinutes = getMinutesFromMidnight(startHour, startMinute, startAmPm);
+    let endTimeMinutes = getMinutesFromMidnight(endHour, endMinute, endAmPm);
+
+    if (startTimeMinutes === endTimeMinutes) {
+      setTimeError(currentT.errorTime);
+      return;
+    }
+
     setIsGenerating(true);
     setSignals([]);
 
     setTimeout(() => {
-      const startTimeMinutes = getMinutesFromMidnight(startHour, startMinute, startAmPm);
-      let endTimeMinutes = getMinutesFromMidnight(endHour, endMinute, endAmPm);
+      // If end time is less than start time, assume next day
+      if (endTimeMinutes < startTimeMinutes) {
+        endTimeMinutes += 24 * 60; // 24 hours rollover
+      }
 
-      // If end time is less than start time, assume next day or alert error
-      if (endTimeMinutes <= startTimeMinutes) {
-        // Automatically append 12 hours or alert
-        endTimeMinutes += 12 * 60; // assume rollover
+      if (endTimeMinutes - startTimeMinutes > 6 * 60) {
+         setTimeError(lang === 'ar' ? 'المدة أطول من اللازم. أقصى مدة هي 6 ساعات لضمان الجودة.' : 'Duration too long. Max duration is 6 hours for optimal quality.');
+         setIsGenerating(false);
+         return;
       }
 
       const generated: Signal[] = [];
@@ -248,24 +291,24 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
   }
 
   return (
-    <div className="w-full flex flex-col gap-6">
+    <div className="w-full flex flex-col gap-8">
       {/* 4. Activation card */}
-      <div className="w-full bg-[#0c1023]/80 border border-brand-teal/20 rounded-[24px] p-5 shadow-lg relative overflow-hidden">
-        <div className="flex flex-col gap-3">
+      <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-6 shadow-2xl relative overflow-hidden shadow-brand-primary/5">
+        <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-brand-teal shrink-0" />
-            <span className="text-xs text-gray-300 font-sans font-medium">
+            <KeyRound className="w-4 h-4 text-brand-primary shrink-0" />
+            <span className="text-xs text-gray-300 font-sans font-semibold">
               {currentT.activeCode}
             </span>
           </div>
           
-          <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-brand-teal select-all bg-brand-teal/10 border border-brand-teal/20 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wider">
+          <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="font-mono text-brand-primary select-all bg-brand-primary/10 border border-brand-primary/20 px-4 py-2 rounded-[20px] text-xs font-bold tracking-wider">
                 {activatedCode}
               </span>
               {remainingHours !== null && (
-                <span className="font-sans text-[11px] bg-brand-fuchsia/10 text-brand-fuchsia px-3 py-1 rounded-full border border-brand-fuchsia/20 font-extrabold">
+                <span className="font-sans text-[11px] bg-brand-accent/10 text-brand-accent px-4 py-1.5 rounded-[20px] border border-brand-accent/20 font-extrabold">
                   {lang === 'ar' ? `متبقي: ${remainingHours} ساعة` : `Expires in: ${remainingHours} hrs`}
                 </span>
               )}
@@ -273,7 +316,7 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
 
             <button
               onClick={onLockSession}
-              className="px-4 py-2 rounded-xl border border-brand-fuchsia/30 hover:border-brand-fuchsia text-brand-fuchsia hover:bg-brand-fuchsia/10 font-bold transition-all duration-300 cursor-pointer text-xs shrink-0"
+              className="px-5 py-2.5 rounded-[20px] border border-brand-accent/35 hover:border-brand-accent text-brand-accent hover:bg-brand-accent/15 font-bold transition-all duration-300 cursor-pointer text-xs shrink-0 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_15px_rgba(255,47,146,0.2)]"
             >
               {currentT.logoutBtn}
             </button>
@@ -282,108 +325,126 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
       </div>
 
       {/* 5. Config card */}
-      <div className="w-full bg-[#0c1023]/80 border border-brand-teal/20 rounded-[24px] p-6 shadow-lg relative">
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles className="w-5 h-5 text-brand-teal animate-pulse" />
+      <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-7 shadow-2xl relative shadow-brand-primary/5">
+        <div className="flex items-center gap-2 mb-4">
+          <Sparkles className="w-5 h-5 text-brand-primary animate-pulse" />
           <h2 className="text-md font-extrabold text-white font-sans tracking-tight">AH VIP Config</h2>
         </div>
         
         {/* Divider line */}
-        <div className="w-full h-px bg-white/10 mb-5" />
+        <div className="w-full h-px bg-white/10 mb-6" />
 
-        <div className="space-y-5">
+        <div className="space-y-6">
           {/* Start time section */}
-          <div>
-            <label className="block text-xs font-bold text-gray-300 mb-2 font-sans flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-brand-teal" />
-              {currentT.startTime}
-            </label>
+          <div className="p-5 rounded-[20px] bg-brand-bg/40 border border-brand-primary/10 hover:border-brand-primary/25 transition-all duration-300 group">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-black text-white font-sans flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-brand-primary/10 text-brand-primary group-hover:scale-110 transition-transform shadow-md shadow-brand-primary/5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  {currentT.startTime}
+                </label>
+                <p className="text-[10px] text-gray-400 font-sans ml-9">
+                  {lang === 'ar' ? 'حدد وقت بدء الجلسة لتوليد الإشارات' : 'Define the starting time for the signal session'}
+                </p>
+              </div>
+              <span className="text-[9px] font-mono font-bold text-brand-primary/80 px-2 py-1 bg-brand-primary/5 rounded-md border border-brand-primary/10 uppercase tracking-widest mt-1">
+                Start_Frame
+              </span>
+            </div>
             
-            <div className="grid grid-cols-3 gap-2">
-              <select
+            <div className="grid grid-cols-3 gap-3">
+              <CustomSelect
                 value={startHour}
-                onChange={(e) => setStartHour(e.target.value)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-sm text-center font-mono cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map(h => (
-                  <option key={h} value={h} className="bg-[#0c1023] text-white">{h}</option>
-                ))}
-              </select>
-
-              <select
+                onChange={(e: any) => setStartHour(e.target.value)}
+                options={Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1).padStart(2, '0'), label: String(i + 1).padStart(2, '0') }))}
+                label={lang === 'ar' ? 'الساعة' : 'Hour'}
+                colorClass="brand-primary"
+              />
+              <CustomSelect
                 value={startMinute}
-                onChange={(e) => setStartMinute(e.target.value)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-sm text-center font-mono cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map(m => (
-                  <option key={m} value={m} className="bg-[#0c1023] text-white">{m}</option>
-                ))}
-              </select>
-
-              <select
+                onChange={(e: any) => setStartMinute(e.target.value)}
+                options={Array.from({ length: 12 }, (_, i) => ({ value: String(i * 5).padStart(2, '0'), label: String(i * 5).padStart(2, '0') }))}
+                label={lang === 'ar' ? 'الدقيقة' : 'Minute'}
+                colorClass="brand-primary"
+              />
+              <CustomSelect
                 value={startAmPm}
-                onChange={(e) => setStartAmPm(e.target.value as any)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-xs text-center font-sans font-bold cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                <option value="AM" className="bg-[#0c1023] text-white">AM</option>
-                <option value="PM" className="bg-[#0c1023] text-white">PM</option>
-              </select>
+                onChange={(e: any) => setStartAmPm(e.target.value)}
+                options={[{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }]}
+                label={lang === 'ar' ? 'صباحاً/مساءً' : 'AM/PM'}
+                colorClass="brand-primary"
+              />
             </div>
           </div>
 
           {/* End time section */}
-          <div>
-            <label className="block text-xs font-bold text-gray-300 mb-2 font-sans flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-brand-fuchsia" />
-              {currentT.endTime}
-            </label>
+          <div className="p-5 rounded-[20px] bg-brand-bg/40 border border-brand-accent/10 hover:border-brand-accent/25 transition-all duration-300 group">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-black text-white font-sans flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-brand-accent/10 text-brand-accent group-hover:scale-110 transition-transform shadow-md shadow-brand-accent/5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  {currentT.endTime}
+                </label>
+                <p className="text-[10px] text-gray-400 font-sans ml-9">
+                  {lang === 'ar' ? 'حدد وقت انتهاء الجلسة (أقصى مدة 6 ساعات)' : 'Define the ending time (Max duration 6 hours)'}
+                </p>
+              </div>
+              <span className="text-[9px] font-mono font-bold text-brand-accent/80 px-2 py-1 bg-brand-accent/5 rounded-md border border-brand-accent/10 uppercase tracking-widest mt-1">
+                End_Frame
+              </span>
+            </div>
             
-            <div className="grid grid-cols-3 gap-2">
-              <select
+            <div className="grid grid-cols-3 gap-3">
+              <CustomSelect
                 value={endHour}
-                onChange={(e) => setEndHour(e.target.value)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-sm text-center font-mono cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map(h => (
-                  <option key={h} value={h} className="bg-[#0c1023] text-white">{h}</option>
-                ))}
-              </select>
-
-              <select
+                onChange={(e: any) => setEndHour(e.target.value)}
+                options={Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1).padStart(2, '0'), label: String(i + 1).padStart(2, '0') }))}
+                label={lang === 'ar' ? 'الساعة' : 'Hour'}
+                colorClass="brand-accent"
+              />
+              <CustomSelect
                 value={endMinute}
-                onChange={(e) => setEndMinute(e.target.value)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-sm text-center font-mono cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map(m => (
-                  <option key={m} value={m} className="bg-[#0c1023] text-white">{m}</option>
-                ))}
-              </select>
-
-              <select
+                onChange={(e: any) => setEndMinute(e.target.value)}
+                options={Array.from({ length: 12 }, (_, i) => ({ value: String(i * 5).padStart(2, '0'), label: String(i * 5).padStart(2, '0') }))}
+                label={lang === 'ar' ? 'الدقيقة' : 'Minute'}
+                colorClass="brand-accent"
+              />
+              <CustomSelect
                 value={endAmPm}
-                onChange={(e) => setEndAmPm(e.target.value as any)}
-                className="bg-[#070a18] border border-white/10 hover:border-brand-teal/30 focus:border-brand-teal rounded-xl py-2 px-3 text-xs text-center font-sans font-bold cursor-pointer transition-all duration-300 text-white focus:outline-none"
-              >
-                <option value="AM" className="bg-[#0c1023] text-white">AM</option>
-                <option value="PM" className="bg-[#0c1023] text-white">PM</option>
-              </select>
+                onChange={(e: any) => setEndAmPm(e.target.value)}
+                options={[{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }]}
+                label={lang === 'ar' ? 'صباحاً/مساءً' : 'AM/PM'}
+                colorClass="brand-accent"
+              />
             </div>
           </div>
+
+          {/* Validation Error */}
+          {timeError && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-[16px] bg-red-500/10 border border-red-500/20 text-red-400">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold leading-relaxed">{timeError}</p>
+            </div>
+          )}
 
           {/* Main CTA button */}
           <button
             onClick={handleGenerate}
             disabled={isGenerating}
-            className="w-full py-4 mt-2 rounded-xl bg-gradient-to-r from-brand-teal via-[#8B1E9A] to-brand-fuchsia hover:brightness-110 active:scale-[0.98] text-white font-extrabold transition-all duration-300 cursor-pointer text-sm shadow-md border border-brand-teal/30 flex items-center justify-center gap-2"
+            className="w-full py-4.5 mt-4 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent hover:brightness-110 transform hover:-translate-y-1 active:scale-[0.98] hover:shadow-[0_0_20px_rgba(36,232,255,0.35)] text-white font-black transition-all duration-300 cursor-pointer text-sm shadow-lg border border-brand-primary/40 flex items-center justify-center gap-2.5"
           >
             {isGenerating ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <RefreshCw className="w-4.5 h-4.5 animate-spin" />
                 <span className="text-xs font-sans font-semibold">{currentT.generating}</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4 animate-pulse" />
+                <Sparkles className="w-4.5 h-4.5 animate-pulse" />
                 <span>{currentT.genBtn}</span>
               </>
             )}
@@ -392,40 +453,45 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
       </div>
 
       {/* 6. Output/result card */}
-      <div className="w-full bg-[#0c1023]/80 border border-brand-teal/20 rounded-[24px] p-5 shadow-lg min-h-[220px] flex flex-col justify-center">
+      <div className="w-full bg-brand-card/85 backdrop-blur-xl border border-brand-primary/25 rounded-[24px] p-6 shadow-2xl min-h-[220px] flex flex-col justify-center shadow-brand-primary/5">
         {isGenerating ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <RefreshCw className="w-10 h-10 text-brand-teal animate-spin mb-3" />
-            <p className="text-gray-400 text-xs font-sans font-medium">{currentT.generating}</p>
+          <div className="flex flex-col gap-4 py-4 w-full">
+            {[1, 2, 3].map((_, i) => (
+              <div key={i} className={`w-full h-16 rounded-[20px] bg-white/5 animate-skeleton border border-white/5 opacity-${100 - i * 20}`} style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+            <div className="flex flex-col items-center justify-center pt-2">
+              <RefreshCw className="w-5 h-5 text-brand-primary animate-spin mb-2 shadow-[0_0_15px_rgba(36,232,255,0.2)] rounded-full" />
+              <p className="text-gray-400 text-[10px] font-sans font-medium">{currentT.generating}</p>
+            </div>
           </div>
         ) : signals.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-center py-8">
-            <Clock className="w-12 h-12 text-brand-teal opacity-25 mb-3" />
-            <p className="text-gray-400 text-xs max-w-xs font-sans leading-relaxed px-4">
+          <div className="flex flex-col items-center justify-center text-center py-10 animate-fade-in">
+            <Clock className="w-14 h-14 text-brand-primary opacity-25 mb-4" />
+            <p className="text-gray-400 text-xs max-w-xs font-sans leading-relaxed px-5">
               {currentT.emptySignals}
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5 animate-fade-in">
             {/* Search and Copy All Header inside results */}
-            <div className="flex flex-col gap-2 pb-3 border-b border-white/5">
-              <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+            <div className="flex flex-col gap-3 pb-4 border-b border-white/5">
+              <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
                 <div className="relative w-full sm:max-w-[240px]">
-                  <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                  <Search className="absolute left-3.5 top-3 w-3.5 h-3.5 text-gray-400" />
                   <input
                     type="text"
                     placeholder={currentT.searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-[#070a18] border border-white/10 rounded-xl py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none focus:border-brand-teal"
+                    className="w-full bg-brand-bg/90 border border-brand-primary/25 hover:border-brand-primary/50 focus:border-brand-primary rounded-[20px] py-2.5 pl-9 pr-4 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-all duration-300"
                   />
                 </div>
 
                 <button
                   onClick={handleCopyAll}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-teal via-[#138C84] to-brand-fuchsia hover:brightness-110 text-white shadow-xl shadow-brand-teal/10 text-xs font-extrabold transition-all duration-300 cursor-pointer flex items-center justify-center gap-2 transform active:scale-[0.98] border border-white/10"
+                  className="w-full sm:w-auto px-6 py-3 rounded-[20px] bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-accent hover:brightness-110 text-white shadow-xl hover:shadow-[0_0_20px_rgba(36,232,255,0.35)] text-xs font-black transition-all duration-300 cursor-pointer flex items-center justify-center gap-2.5 transform hover:-translate-y-1 active:scale-[0.98] border border-white/10"
                 >
-                  <span className="bg-black/35 text-brand-teal px-1.5 py-0.5 rounded text-[10px] font-black tracking-widest border border-brand-teal/20">AH VIP</span>
+                  <span className="bg-black/35 text-brand-primary px-1.5 py-0.5 rounded text-[10px] font-black tracking-widest border border-brand-primary/20">AH VIP</span>
                   {copiedAll ? <Check className="w-4 h-4 text-emerald-300 shrink-0 animate-bounce" /> : <Copy className="w-4 h-4 text-white shrink-0" />}
                   <span>{copiedAll ? currentT.copiedAll : currentT.copyAll}</span>
                 </button>
@@ -433,9 +499,9 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
             </div>
 
             {/* List of beautifully spaced individual signal card rows */}
-            <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
               {filteredSignals.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-6">
+                <p className="text-center text-xs text-gray-400 py-8 font-semibold animate-fade-in">
                   {lang === 'ar' ? 'لم يعثر على نتائج مطابقة لفلتر البحث.' : 'No matched search filters.'}
                 </p>
               ) : (
@@ -445,14 +511,15 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                   return (
                     <div 
                       key={idx} 
-                      className="flex items-center justify-between gap-2 p-3.5 rounded-xl bg-[#070a18]/70 border border-white/5 hover:border-brand-teal/25 transition-all duration-200"
+                      className="flex items-center justify-between gap-3 p-4 rounded-[20px] bg-brand-bg/80 border border-brand-primary/20 hover:border-brand-primary/45 shadow-sm hover:shadow-[0_0_15px_rgba(36,232,255,0.15)] hover:bg-brand-bg/95 transition-all duration-300 animate-slide-up transform hover:-translate-y-1"
+                      style={{ animationDelay: `${Math.min(idx * 0.05, 0.5)}s`, animationFillMode: 'both' }}
                     >
                       <div className="flex items-center gap-3">
                         {/* Decorative ⧉ symbol for realism */}
-                        <span className="text-brand-teal/40 text-sm select-none">⧉</span>
+                        <span className="text-brand-primary/40 text-sm select-none">⧉</span>
 
                         {/* Time tag */}
-                        <span className="font-mono text-xs font-black text-white bg-white/5 px-2.5 py-1 rounded-lg">
+                        <span className="font-mono text-xs font-black text-white bg-white/5 px-3 py-1.5 rounded-[20px] border border-white/5">
                           {stylizeText(signal.time)}
                         </span>
                         
@@ -462,12 +529,12 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         {/* Call/Put Direction badge */}
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wide ${
+                        <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-[20px] text-[10px] font-black tracking-wide ${
                           isCall
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-brand-fuchsia/10 text-brand-fuchsia border border-brand-fuchsia/20'
+                            : 'bg-brand-accent/10 text-brand-accent border border-brand-accent/20'
                         }`}>
                           {isCall ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                           {isCall ? currentT.call : currentT.put}
@@ -476,10 +543,10 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
                         {/* Copy button */}
                         <button
                           onClick={() => handleCopySingle(signal, idx)}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-brand-teal transition-all cursor-pointer border border-white/10"
+                          className="p-2 rounded-[20px] bg-white/5 hover:bg-white/10 text-gray-400 hover:text-brand-primary transition-all cursor-pointer border border-white/10 transform active:scale-[0.92]"
                           title={currentT.copySingle}
                         >
-                          {isCopied ? <Check className="w-3.5 h-3.5 text-brand-teal" /> : <Copy className="w-3.5 h-3.5" />}
+                          {isCopied ? <Check className="w-3.5 h-3.5 text-brand-primary" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
@@ -492,14 +559,14 @@ export default function SignalGenerator({ activatedCode, onLockSession, lang, co
       </div>
 
       {/* 7. Telegram official channel button */}
-      <div className="w-full mt-2">
+      <div className="w-full mt-4">
         <a 
           href="https://t.me/AH_QUOTEX" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="w-full border border-brand-teal/30 hover:border-brand-teal text-brand-teal hover:bg-brand-teal/10 rounded-[20px] py-3.5 px-4 flex items-center justify-center gap-2 text-xs font-bold transition-all duration-300 shadow-md cursor-pointer"
+          className="w-full border border-brand-primary/30 hover:border-brand-primary text-brand-primary hover:bg-brand-primary/10 rounded-[20px] py-4 px-5 flex items-center justify-center gap-2 text-xs font-extrabold transition-all duration-300 shadow-lg hover:shadow-[0_0_15px_rgba(36,232,255,0.2)] cursor-pointer transform hover:-translate-y-1 active:scale-[0.98]"
         >
-          <ExternalLink className="w-4 h-4 text-brand-teal" />
+          <ExternalLink className="w-4 h-4 text-brand-primary" />
           <span>{lang === 'ar' ? 'قناة التليجرام الرسمية للأدمن: @AH_QUOTEX' : 'Official Admin Telegram Channel: @AH_QUOTEX'}</span>
         </a>
       </div>
