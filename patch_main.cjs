@@ -1,0 +1,368 @@
+const fs = require('fs');
+
+const code = `import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Send, Lock, Clock, CalendarDays, ShieldAlert, LogOut, CheckCircle2, User, ChevronLeft } from 'lucide-react';
+import SignalGenerator from './components/SignalGenerator';
+
+export default function MainUserApp() {
+  const [session, setSession] = useState<any>(null);
+  const [serverTimeOffset, setServerTimeOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/session')
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(data => {
+        setSession(data.session);
+        if (data.serverNow) {
+          setServerTimeOffset(new Date(data.serverNow).getTime() - Date.now());
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setSession(null);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleLogout = () => {
+    fetch('/api/logout', { method: 'POST' }).then(() => setSession(null));
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#030712] flex items-center justify-center relative font-sans" dir="rtl">
+        <div className="w-10 h-10 border-2 border-[#00F0FF]/20 border-t-[#00F0FF] rounded-full animate-spin shadow-[0_0_15px_rgba(0,240,255,0.3)]" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#060B14] text-slate-200 font-sans overflow-x-hidden selection:bg-[#00F0FF]/30 relative" dir="rtl">
+      {/* Subtle Background Elements */}
+      <div className="fixed inset-0 pointer-events-none z-0" 
+           style={{
+             backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.05) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(176, 38, 255, 0.03) 0%, transparent 40%)',
+           }} 
+      />
+      <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]" 
+           style={{
+             backgroundImage: 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
+             backgroundSize: '32px 32px'
+           }} 
+      />
+
+      <div className="relative z-10 w-full min-h-screen flex items-center justify-center sm:p-6 p-0">
+        <AnimatePresence mode="wait">
+          {!session ? (
+            <LoginScreen key="login" onLogin={(data) => {
+              setSession(data.codeInfo);
+              if (data.serverNow) setServerTimeOffset(new Date(data.serverNow).getTime() - Date.now());
+            }} />
+          ) : (
+            <div key="dashboard" className="w-full max-w-[1200px] mx-auto min-h-screen sm:min-h-0 sm:py-6 flex flex-col sm:gap-6 bg-[#0B101E] sm:bg-transparent sm:rounded-none">
+              <DashboardHeader userName={(window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || 'VIP Member'} onLogout={handleLogout} />
+              
+              <div className="flex flex-col lg:flex-row gap-6 px-4 sm:px-0">
+                {/* Left/Top Sidebar: Membership & Support */}
+                <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
+                   <MembershipCard session={session} serverTimeOffset={serverTimeOffset} />
+                   
+                   <a 
+                      href="https://t.me/AH_QUOTEX_SUPPORT" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="w-full bg-[#111827] border border-white/5 hover:border-[#00F0FF]/40 hover:bg-[#151F32] rounded-2xl p-4 flex items-center justify-between group transition-all duration-300"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-[#00F0FF]/10 transition-colors">
+                          <Send className="w-5 h-5 text-slate-400 group-hover:text-[#00F0FF] transition-colors" />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-white">الدعم الفني</span>
+                          <span className="text-[11px] text-slate-400">تواصل معنا لتجديد الاشتراك</span>
+                        </div>
+                      </div>
+                      <ChevronLeft className="w-5 h-5 text-slate-500 group-hover:text-[#00F0FF] group-hover:-translate-x-1 transition-all" />
+                    </a>
+                </div>
+
+                {/* Main Content: Signal Generator */}
+                <div className="w-full flex-1 min-w-0">
+                  <SignalGenerator lang="ar" />
+                </div>
+              </div>
+              
+              {/* Telegram Footer */}
+              <div className="px-4 sm:px-0 mt-2 sm:mt-4 mb-6">
+                <a 
+                  href="https://t.me/AH_QUOTEX" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full border border-white/5 bg-[#111827]/50 hover:bg-[#111827] rounded-2xl p-4 flex items-center justify-center gap-2 text-sm font-bold text-slate-300 hover:text-[#00F0FF] transition-all duration-300"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>قناة التليجرام الرسمية للأدمن</span>
+                  <span dir="ltr" className="text-[#00F0FF] ml-1">@AH_QUOTEX</span>
+                </a>
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function DashboardHeader({ userName, onLogout }: { userName: string, onLogout: () => void }) {
+  return (
+    <header className="sticky top-0 z-50 px-4 py-4 sm:px-0 bg-[#0B101E]/80 backdrop-blur-xl sm:bg-transparent border-b border-white/5 sm:border-none mb-4 sm:mb-0">
+      <div className="flex items-center justify-between w-full">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#0B101E] to-[#151F32] flex items-center justify-center border border-white/10 shadow-lg">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00F0FF] to-[#0066FF] font-black tracking-tighter text-sm">AH</span>
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-base font-bold text-white leading-tight">{userName}</h1>
+            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-0.5">VIP Member</span>
+          </div>
+        </div>
+        <button 
+          onClick={onLogout}
+          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 transition-colors"
+          title="تسجيل خروج"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function MembershipCard({ session, serverTimeOffset }: { session: any, serverTimeOffset: number }) {
+  const [timeLeft, setTimeLeft] = useState('');
+  const [daysLeft, setDaysLeft] = useState(0);
+  const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    const calculateTime = () => {
+      const expiresAt = new Date(session.expires_at).getTime();
+      const activatedAt = new Date(session.activated_at).getTime();
+      const now = Date.now() + serverTimeOffset;
+      const difference = expiresAt - now;
+      const totalDuration = expiresAt - activatedAt;
+      
+      if (difference <= 0) {
+        setTimeLeft('منتهي الصلاحية');
+        setDaysLeft(0);
+        setProgress(0);
+        return;
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      
+      setDaysLeft(days);
+      setTimeLeft(\`\${days} يوم و \${hours} ساعة\`);
+      setProgress(Math.max(0, Math.min(100, (difference / totalDuration) * 100)));
+    };
+
+    calculateTime();
+    const timer = setInterval(calculateTime, 60000);
+    return () => clearInterval(timer);
+  }, [session, serverTimeOffset]);
+
+  const isLow = daysLeft <= 3;
+  const strokeColor = isLow ? "#F43F5E" : "#00F0FF";
+
+  return (
+    <div className="bg-[#111827] rounded-3xl p-5 border border-white/5 shadow-2xl relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-[#00F0FF]/5 rounded-full blur-[50px] pointer-events-none group-hover:bg-[#00F0FF]/10 transition-colors duration-500" />
+      
+      <div className="flex justify-between items-start mb-6 relative z-10">
+        <div>
+          <h2 className="text-sm font-bold text-slate-300">عضوية AH VIP</h2>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-bold text-emerald-400">نشط</span>
+          </div>
+        </div>
+        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+          <Lock className="w-4 h-4 text-[#00F0FF]" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 relative z-10">
+        <div className="relative w-16 h-16 flex items-center justify-center shrink-0">
+          <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" className="text-white/5" />
+            <motion.circle 
+              cx="50" cy="50" r="45" 
+              fill="none" 
+              stroke={strokeColor} 
+              strokeWidth="8" 
+              strokeLinecap="round"
+              strokeDasharray={283}
+              initial={{ strokeDashoffset: 283 }}
+              animate={{ strokeDashoffset: 283 - (283 * progress) / 100 }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="drop-shadow-[0_0_8px_rgba(0,240,255,0.5)]"
+            />
+          </svg>
+          <Clock className="w-5 h-5 text-white absolute" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-1">المدة المتبقية</span>
+          <span className={\`font-black text-lg \${isLow ? 'text-rose-400' : 'text-white'}\`}>{timeLeft}</span>
+        </div>
+      </div>
+      
+      {isLow && (
+        <div className="mt-4 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-rose-300 font-medium leading-relaxed">
+            سينتهي اشتراكك قريباً. يرجى التجديد لتجنب توقف الخدمة.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }: { key?: string, onLogin: (data: any) => void }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [telegramId] = useState(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    return tg?.initDataUnsafe?.user?.id?.toString() || 'fake_tg_id_' + Math.floor(Math.random() * 1000000);
+  });
+
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!code) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await fetch('/api/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, telegramId })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.arabicError || data.error);
+        setIsSubmitting(false);
+      } else {
+        setSuccess(data.arabicMessage || 'تم فتح حساب AH VIP بنجاح');
+        setTimeout(() => {
+          onLogin(data);
+        }, 2000);
+      }
+    } catch (err) {
+      setError('حدث خطأ في الاتصال، يرجى المحاولة لاحقاً.');
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      className="w-full max-w-sm bg-[#111827] p-8 rounded-3xl relative overflow-hidden shadow-2xl border border-white/5"
+    >
+      <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-l from-transparent via-[#00F0FF] to-transparent opacity-50" />
+      
+      <div className="flex justify-center mb-8">
+        <div className="relative flex items-center justify-center w-24 h-24">
+          <div className="absolute inset-0 rounded-2xl border-2 border-[#00F0FF]/30 rotate-3" />
+          <div className="absolute inset-0 rounded-2xl border-2 border-[#0066FF]/20 -rotate-3" />
+          <div className="w-full h-full rounded-2xl bg-gradient-to-br from-[#0B101E] to-[#151F32] flex items-center justify-center shadow-[0_0_20px_rgba(0,240,255,0.2)] border border-[#00F0FF]/50 relative overflow-hidden">
+            <span className="font-black text-transparent bg-clip-text bg-gradient-to-br from-[#00F0FF] to-[#0066FF] text-2xl tracking-tighter">AH VIP</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="text-center mb-8">
+        <h1 className="text-xl font-black mb-2 text-white">بوابة <span className="text-[#00F0FF]">AH VIP</span></h1>
+        <p className="text-xs text-slate-400 font-medium leading-relaxed">
+          أدخل كود اشتراكك الشهري للوصول
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <motion.div 
+          animate={error ? { x: [-10, 10, -10, 10, 0] } : {}}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col gap-2 relative"
+        >
+          <div className="relative">
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 flex items-center justify-center pointer-events-none">
+              <Lock className="w-5 h-5" />
+            </div>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={isSubmitting || !!success}
+              className="w-full bg-[#0B101E] border border-white/10 px-5 py-4 pr-12 rounded-xl text-center text-lg font-bold text-white font-mono tracking-[0.2em] focus:border-[#00F0FF]/50 focus:ring-1 focus:ring-[#00F0FF]/50 uppercase transition-all placeholder:text-slate-600 placeholder:tracking-normal placeholder:font-sans outline-none"
+              placeholder="AHVIP-XXXX"
+              dir="ltr"
+            />
+          </div>
+        </motion.div>
+
+        <AnimatePresence mode="wait">
+          {error && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="text-xs text-rose-400 font-bold text-center bg-rose-500/10 py-3 px-4 rounded-xl border border-rose-500/20 flex items-center justify-center gap-2 overflow-hidden"
+            >
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </motion.div>
+          )}
+          {success && (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="text-xs text-emerald-400 font-bold text-center bg-emerald-500/10 py-3 px-4 rounded-xl border border-emerald-500/20 flex items-center justify-center gap-2 overflow-hidden"
+            >
+              <CheckCircle2 className="w-5 h-5 shrink-0" />
+              <span>{success}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          type="submit"
+          disabled={!code || isSubmitting || !!success}
+          className="w-full mt-2 bg-[#00F0FF] hover:bg-[#00D0FF] rounded-xl py-3.5 text-[#0B101E] shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all duration-300 font-extrabold flex items-center justify-center gap-2 disabled:opacity-50 disabled:active:scale-100"
+        >
+          {isSubmitting ? (
+            <div className="w-5 h-5 border-2 border-[#0B101E]/30 border-t-[#0B101E] rounded-full animate-spin" />
+          ) : (
+            <span className="text-base">دخول وتفعيل</span>
+          )}
+        </motion.button>
+      </form>
+    </motion.div>
+  );
+}
+`;
+fs.writeFileSync('src/MainUserApp.tsx', code);

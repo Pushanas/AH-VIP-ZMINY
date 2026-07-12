@@ -105,7 +105,6 @@ html {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
-
 @keyframes haloRotateReverse {
   0% { transform: rotate(360deg); }
   100% { transform: rotate(0deg); }
@@ -128,12 +127,10 @@ html {
   0%, 100% { transform: translate(0px, 0px) scale(1); }
   50% { transform: translate(40px, -60px) scale(1.15); }
 }
-
 @keyframes floatOrb2 {
   0%, 100% { transform: translate(0px, 0px) scale(1.1); }
   50% { transform: translate(-50px, 40px) scale(0.9); }
 }
-
 @keyframes floatOrb3 {
   0%, 100% { transform: translate(0px, 0px) scale(0.9); }
   50% { transform: translate(30px, 50px) scale(1.1); }
@@ -173,27 +170,21 @@ html {
 .animate-halo {
   animation: haloRotate 16s linear infinite;
 }
-
 .animate-halo-reverse {
   animation: haloRotateReverse 24s linear infinite;
 }
-
 .animate-logo-pulse {
   animation: pulseGlow 4s ease-in-out infinite;
 }
-
 .animate-orb-1 {
   animation: floatOrb1 20s ease-in-out infinite;
 }
-
 .animate-orb-2 {
   animation: floatOrb2 25s ease-in-out infinite;
 }
-
 .animate-orb-3 {
   animation: floatOrb3 22s ease-in-out infinite;
 }
-
 .scan-line {
   background: linear-gradient(to bottom, transparent, rgba(36, 232, 255, 0.15) 50%, transparent);
   animation: slowScan 6s linear infinite;
@@ -228,14 +219,12 @@ html {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
 }
-
 .glass-input:focus {
   outline: none;
   border-color: #24E8FF;
   background: rgba(9, 11, 26, 0.85);
   box-shadow: 0 0 15px rgba(36, 232, 255, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.8);
 }
-
 .glass-input-fuchsia:focus {
   outline: none;
   border-color: #FF2F92;

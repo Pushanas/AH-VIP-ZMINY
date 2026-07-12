@@ -2,6 +2,7 @@ export interface Signal {
   time: string;
   pair: string;
   direction: 'CALL' | 'PUT';
+  id?: number;
 }
 
 export const ASSET_PAIRS = [
