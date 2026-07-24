@@ -67,27 +67,8 @@ app.use(cookieParser());
 app.use(cors());
 
 // --- Rate Limiting Logic ---
-const checkRateLimit = (ip) => {
-  const now = new Date().toISOString();
-  let limit = db.prepare('SELECT * FROM rate_limits WHERE ip = ?').get(ip) as any;
-
-  if (!limit) {
-    db.prepare('INSERT INTO rate_limits (ip, attempts) VALUES (?, 1)').run(ip);
-    return true;
-  }
-
-  if (limit.lockout_until && limit.lockout_until > now) {
-    return false; // Locked out
-  }
-
-  if (limit.attempts >= 5) {
-    // Lock for 15 minutes
-    const lockoutTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    db.prepare('UPDATE rate_limits SET lockout_until = ?, attempts = 0 WHERE ip = ?').run(lockoutTime, ip);
-    return false;
-  }
-
-  db.prepare('UPDATE rate_limits SET attempts = attempts + 1 WHERE ip = ?').run(ip);
+const checkRateLimit = (_ip) => {
+  // IP rate limiting disabled per requirements to allow all devices and phones freely
   return true;
 };
 

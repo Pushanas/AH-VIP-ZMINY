@@ -74,6 +74,16 @@ const CHANNEL_LINK = "https://t.me/AH_QUOTEX";
 const SUPPORT_LINK = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
+  // Purge all legacy locks & device limit restrictions on load
+  useEffect(() => {
+    try {
+      localStorage.removeItem('ah_vip_locked_date');
+      localStorage.removeItem('ah_vip_24h_limit_v2');
+      localStorage.removeItem('ah_vip_today_signals_v1');
+      fetch('/api/clear-rate-limits', { method: 'POST' }).catch(() => {});
+    } catch (e) {}
+  }, []);
+
   const [startTime, setStartTime] = useState(getEgyptTimeInit());
   const [endTime, setEndTime] = useState(getEgyptEndTimeInit());
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -122,26 +132,16 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setBtnGlow(prev => ({ ...prev, active: false, isClicking: false }));
   };
 
-  // Digital Countdown Timer State for Lock Screen
+  // Digital Countdown Timer State for 24h Reset
   const [countdownHours, setCountdownHours] = useState('00');
   const [countdownMins, setCountdownMins] = useState('00');
   const [countdownSecs, setCountdownSecs] = useState('00');
 
-  // Persistent Locked State (Auto shut down after last trade time or 10-trade daily limit)
-  const [isLocked, setIsLocked] = useState<boolean>(() => {
-    try {
-      const today = getCairoDateStr();
-      const storedLockedDate = localStorage.getItem('ah_vip_locked_date');
-      if (storedLockedDate === today) {
-        return true;
-      }
-    } catch (e) {}
-    return false;
-  });
-
-  // 24H Usage State
+  // 24H Usage State (Limited to 10 trades per generation per 24 hours per device)
   const [usageData, setUsageData] = useState(() => {
     try {
+      // Clear legacy lock state automatically
+      localStorage.removeItem('ah_vip_locked_date');
       const stored = localStorage.getItem('ah_vip_24h_limit_v2');
       if (stored) {
         return JSON.parse(stored);
@@ -150,18 +150,11 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return { lastTimestamp: 0, count: 0 };
   });
 
-  const handleFullSystemReset = async () => {
-    try {
-      localStorage.removeItem('ah_vip_locked_date');
-      localStorage.removeItem('ah_vip_today_signals_v1');
-      localStorage.removeItem('ah_vip_24h_limit_v2');
-      await fetch('/api/clear-rate-limits', { method: 'POST' }).catch(() => {});
-    } catch (e) {}
-    setIsLocked(false);
-    setSignals([]);
-    setHasGenerated(false);
-    setUsageData({ lastTimestamp: 0, count: 0 });
-  };
+  // Calculate 24h cycle status
+  const nowMs = Date.now();
+  const elapsedMs = usageData.lastTimestamp > 0 ? (nowMs - usageData.lastTimestamp) : 24 * 60 * 60 * 1000;
+  const is24HoursPassed = elapsedMs >= 24 * 60 * 60 * 1000;
+  const currentCount = is24HoursPassed ? 0 : usageData.count;
 
   // Load saved signals for today if exist
   useEffect(() => {
@@ -178,85 +171,33 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     } catch(e) {}
   }, []);
 
-  // Main Interval: Automatic Lock Checking (Last trade passed OR 10/10 limit) & Countdown
+  // Main 24h Countdown Timer Interval
   useEffect(() => {
-    const checkAutoLockAndCountdown = () => {
-      const today = getCairoDateStr();
-      const currentMins = getCairoTimeMinutes();
-      const nowMs = Date.now();
-
-      // Reset lock if date changed to a new Cairo day
-      const storedLockedDate = localStorage.getItem('ah_vip_locked_date');
-      if (storedLockedDate && storedLockedDate !== today) {
-        localStorage.removeItem('ah_vip_locked_date');
-        localStorage.removeItem('ah_vip_today_signals_v1');
-        setIsLocked(false);
-      }
-
-      // 1. Check if usage count reached 10 trades daily limit
-      const elapsed = nowMs - usageData.lastTimestamp;
+    const updateCountdown = () => {
+      const now = Date.now();
+      const elapsed = usageData.lastTimestamp > 0 ? (now - usageData.lastTimestamp) : 24 * 60 * 60 * 1000;
       const total24h = 24 * 60 * 60 * 1000;
-      const isExpired24h = elapsed >= total24h;
-      const effectiveCount = isExpired24h ? 0 : usageData.count;
 
-      if (effectiveCount >= MAX_DAILY_SIGNALS) {
-        setIsLocked(true);
-        try {
-          localStorage.setItem('ah_vip_locked_date', today);
-        } catch (e) {}
+      if (usageData.lastTimestamp > 0 && elapsed < total24h && usageData.count >= MAX_DAILY_SIGNALS) {
+        const remainingMs = total24h - elapsed;
+        const h = Math.floor(remainingMs / (1000 * 60 * 60));
+        const m = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((remainingMs % (1000 * 60)) / 1000);
+
+        setCountdownHours(String(h).padStart(2, '0'));
+        setCountdownMins(String(m).padStart(2, '0'));
+        setCountdownSecs(String(s).padStart(2, '0'));
+      } else {
+        setCountdownHours('00');
+        setCountdownMins('00');
+        setCountdownSecs('00');
       }
-
-      // 2. Check if the time of the LAST generated signal has passed in Cairo time
-      if (signals && signals.length > 0) {
-        const lastSignal = signals[signals.length - 1];
-        if (lastSignal && lastSignal.time) {
-          const lastSignalMins = parseTimeToMinutes(lastSignal.time);
-          if (currentMins > lastSignalMins) {
-            setIsLocked(true);
-            try {
-              localStorage.setItem('ah_vip_locked_date', today);
-            } catch (e) {}
-          }
-        }
-      }
-
-      // Calculate remaining time until Cairo midnight (00:00:00)
-      let remainingSecs = 0;
-      try {
-        const nowCairoStr = new Date().toLocaleTimeString('en-US', {
-          timeZone: 'Africa/Cairo',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
-        });
-        const [h, m, s] = nowCairoStr.split(':').map(Number);
-        const passedSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
-        remainingSecs = Math.max(0, 86400 - passedSeconds);
-      } catch (e) {
-        const now = new Date();
-        const passedSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-        remainingSecs = Math.max(0, 86400 - passedSeconds);
-      }
-
-      const h = Math.floor(remainingSecs / 3600);
-      const m = Math.floor((remainingSecs % 3600) / 60);
-      const s = remainingSecs % 60;
-
-      setCountdownHours(String(h).padStart(2, '0'));
-      setCountdownMins(String(m).padStart(2, '0'));
-      setCountdownSecs(String(s).padStart(2, '0'));
     };
 
-    checkAutoLockAndCountdown();
-    const interval = setInterval(checkAutoLockAndCountdown, 1000);
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [usageData, signals]);
-
-  // Calculate current quota status
-  const nowMs = Date.now();
-  const is24HoursPassed = (nowMs - usageData.lastTimestamp) >= 24 * 60 * 60 * 1000;
-  const currentCount = is24HoursPassed ? 0 : usageData.count;
+  }, [usageData]);
 
   // Interactive feature: Local Star/Favorite state for specific signals
   const [favorites, setFavorites] = useState<Record<number, boolean>>({});
@@ -287,20 +228,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       return;
     }
 
-    // Check 10-trade limit
     const now = Date.now();
-    const isExpired24h = (now - usageData.lastTimestamp) >= 24 * 60 * 60 * 1000;
-    const effectiveCount = isExpired24h ? 0 : usageData.count;
-
-    if (effectiveCount >= MAX_DAILY_SIGNALS) {
-      const today = getCairoDateStr();
-      setIsLocked(true);
-      try {
-        localStorage.setItem('ah_vip_locked_date', today);
-      } catch (e) {}
-      return;
-    }
-
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     
@@ -322,9 +250,9 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setTimeout(() => {
       const generated: Signal[] = [];
       let currentTime = totalStartMins + 5;
-      const remainingQuota = MAX_DAILY_SIGNALS - effectiveCount;
 
-      while (currentTime < totalEndMins && generated.length < remainingQuota) {
+      // Always generate exactly 10 signals per generation!
+      while (currentTime < totalEndMins && generated.length < MAX_DAILY_SIGNALS) {
         const hours = Math.floor(currentTime / 60) % 24;
         const minutes = currentTime % 60;
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
@@ -342,10 +270,11 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         currentTime += randomMinutesToAdd;
       }
 
-      // Fallback if time window was narrow
-      if (generated.length === 0 && remainingQuota > 0) {
-        const hours = Math.floor((totalStartMins + 2) / 60) % 24;
-        const minutes = (totalStartMins + 2) % 60;
+      // Fallback if window is narrow, pad to 10 signals
+      while (generated.length < MAX_DAILY_SIGNALS) {
+        const extraMins = totalStartMins + (generated.length * 4) + 2;
+        const hours = Math.floor(extraMins / 60) % 24;
+        const minutes = extraMins % 60;
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
         generated.push({
           pair: ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)],
@@ -355,12 +284,10 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         });
       }
       
-      // Save usage & today's signals
-      const generatedCount = generated.length;
-      const newTotalCount = effectiveCount + generatedCount;
+      // Save 24h usage & signals
       const newUsage = {
-        lastTimestamp: isExpired24h ? now : usageData.lastTimestamp || now,
-        count: newTotalCount
+        lastTimestamp: now,
+        count: MAX_DAILY_SIGNALS
       };
       setUsageData(newUsage);
       
@@ -372,13 +299,6 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
           signals: generated
         }));
       } catch(e) {}
-
-      // If reached 10 trades limit, lock for the day
-      if (newTotalCount >= MAX_DAILY_SIGNALS) {
-        try {
-          localStorage.setItem('ah_vip_locked_date', today);
-        } catch (e) {}
-      }
 
       setSignals(generated);
       setIsGenerating(false);
@@ -419,123 +339,6 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setCopiedIndex(idx);
     setTimeout(() => setCopiedIndex(null), 2000);
   };
-
-  // IF LOCKED: Show Full-Width Animated Premium Lock Screen
-  if (isLocked) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.96, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full bg-gradient-to-b from-[#0e1226] via-[#080b1a] to-[#04060e] border border-purple-500/30 rounded-3xl p-6 sm:p-12 relative overflow-hidden backdrop-blur-3xl shadow-[0_25px_60px_rgba(168,85,247,0.18)] text-center flex flex-col items-center justify-center my-2"
-      >
-        {/* Animated glowing neon background rings */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-purple-600/15 blur-[110px] animate-pulse" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border border-purple-500/15 animate-[spin_14s_linear_infinite]" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[440px] h-[440px] rounded-full border border-cyan-500/15 animate-[spin_20s_linear_infinite_reverse]" />
-        </div>
-
-        {/* Security Lock Badge */}
-        <div className="relative z-10 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-black mb-6 shadow-lg">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-          </span>
-          <span>إغلاق البوت تلقائياً • نظام VIP اليومي</span>
-        </div>
-
-        {/* Glowing Shield & Lock Icon Centerpiece */}
-        <div className="relative z-10 mb-6">
-          <div className="relative group">
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity animate-pulse" />
-            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[#080c1d] border-2 border-purple-500/40 flex items-center justify-center relative overflow-hidden shadow-2xl">
-              <ShieldAlert className="w-10 h-10 sm:w-12 sm:h-12 text-purple-400 animate-bounce" style={{ animationDuration: '3s' }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Main Arabic Headline */}
-        <h2 className="relative z-10 text-2xl sm:text-3xl font-black text-white tracking-tight mb-3">
-          تم قفل البوت • انتهى حد الصفقات اليومي أو وقت آخر صفقة!
-        </h2>
-
-        {/* Premium Subscription Message */}
-        <div className="relative z-10 max-w-lg bg-white/[0.03] border border-purple-500/20 rounded-2xl p-5 mb-6 text-right sm:text-center">
-          <div className="flex items-center gap-2 text-purple-300 font-black text-sm mb-2 justify-center">
-            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
-            <span>رسالة الاشتراك في الباقة البريميوم (VIP Premium)</span>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-300 font-bold leading-relaxed">
-            عزيزي المتداول، تم إغلاق النظام تلقائياً بعد استنفاد الحد اليومي (10 صفقات) أو انتهاء الوقت المحدد لآخر صفقة استخرجت اليوم لحماية رأس مالك وترجيح الدقة.
-            <br className="hidden sm:block" />
-            للحصول على <span className="text-purple-300 font-black underline decoration-purple-500">صفقات حية غير محدودة على مدار 24 ساعة</span> مع نسبة نجاح تتجاوز 98% وتوليد فوري بدون انتظار، اشترك الآن في النسخة البريميوم.
-          </p>
-        </div>
-
-        {/* Digital Clock Countdown Display */}
-        <div className="relative z-10 mb-8 w-full max-w-sm bg-[#060918]/90 border border-cyan-500/30 rounded-3xl p-5 shadow-[0_0_35px_rgba(0,240,255,0.15)] flex flex-col items-center">
-          <div className="flex items-center gap-2 text-xs font-black text-cyan-400 mb-3.5">
-            <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '4s' }} />
-            <span>متبقي على فتح البوت وتجديد الصفقات المجانية اليومية</span>
-          </div>
-          
-          <div className="flex items-center justify-center gap-3 font-mono text-2xl sm:text-3xl font-black text-white dir-ltr">
-            <div className="flex flex-col items-center">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-cyan-500/30 flex items-center justify-center shadow-inner text-cyan-300">
-                {countdownHours}
-              </div>
-              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">ساعة</span>
-            </div>
-            
-            <span className="text-cyan-400 -mt-5 animate-pulse text-xl sm:text-2xl">:</span>
-
-            <div className="flex flex-col items-center">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-cyan-500/30 flex items-center justify-center shadow-inner text-cyan-300">
-                {countdownMins}
-              </div>
-              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">دقيقة</span>
-            </div>
-
-            <span className="text-cyan-400 -mt-5 animate-pulse text-xl sm:text-2xl">:</span>
-
-            <div className="flex flex-col items-center">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-purple-500/40 flex items-center justify-center shadow-inner text-purple-300">
-                {countdownSecs}
-              </div>
-              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">ثانية</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button: TECHNICAL SUPPORT ICON/BUTTON ONLY */}
-        <div className="relative z-10 flex items-center justify-center w-full max-w-md">
-          <motion.a
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
-            href={SUPPORT_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full h-14 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-[0_0_35px_rgba(168,85,247,0.45)] border border-purple-400/50 transition-all cursor-pointer group relative overflow-hidden"
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-            </span>
-            <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform text-white" />
-            <span>تواصل مع الدعم الفني للاشتراك (Support)</span>
-          </motion.a>
-        </div>
-
-        {/* System Footer Note */}
-        <div className="relative z-10 flex flex-col items-center mt-6">
-          <p className="text-[10px] text-slate-500 font-bold">
-            نظام AH VIP الذكي • حماية الصفقات وإدارة المخاطر
-          </p>
-        </div>
-      </motion.div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6 w-full max-w-full">
