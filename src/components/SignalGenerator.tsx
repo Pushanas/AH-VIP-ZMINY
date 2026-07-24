@@ -74,12 +74,19 @@ const CHANNEL_LINK = "https://t.me/AH_QUOTEX";
 const SUPPORT_LINK = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
-  // Purge all legacy locks & device limit restrictions on load
+  // Load saved signals for today on mount & clear legacy locks
   useEffect(() => {
     try {
       localStorage.removeItem('ah_vip_locked_date');
-      localStorage.removeItem('ah_vip_24h_limit_v2');
-      localStorage.removeItem('ah_vip_today_signals_v1');
+      const today = getCairoDateStr();
+      const saved = localStorage.getItem('ah_vip_today_signals_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length > 0) {
+          setSignals(parsed.signals);
+          setHasGenerated(true);
+        }
+      }
       fetch('/api/clear-rate-limits', { method: 'POST' }).catch(() => {});
     } catch (e) {}
   }, []);
@@ -132,72 +139,57 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setBtnGlow(prev => ({ ...prev, active: false, isClicking: false }));
   };
 
-  // Digital Countdown Timer State for 24h Reset
+  // Digital Countdown & Free Plan Expiration Timer State
   const [countdownHours, setCountdownHours] = useState('00');
   const [countdownMins, setCountdownMins] = useState('00');
   const [countdownSecs, setCountdownSecs] = useState('00');
+  const [isFreePlanExpired, setIsFreePlanExpired] = useState(false);
+  const [hoursLeftOnly, setHoursLeftOnly] = useState(0);
 
-  // 24H Usage State (Limited to 10 trades per generation per 24 hours per device)
-  const [usageData, setUsageData] = useState(() => {
-    try {
-      // Clear legacy lock state automatically
-      localStorage.removeItem('ah_vip_locked_date');
-      const stored = localStorage.getItem('ah_vip_24h_limit_v2');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch(e) {}
-    return { lastTimestamp: 0, count: 0 };
-  });
+  const currentCount = signals.length;
 
-  // Calculate 24h cycle status
-  const nowMs = Date.now();
-  const elapsedMs = usageData.lastTimestamp > 0 ? (nowMs - usageData.lastTimestamp) : 24 * 60 * 60 * 1000;
-  const is24HoursPassed = elapsedMs >= 24 * 60 * 60 * 1000;
-  const currentCount = is24HoursPassed ? 0 : usageData.count;
-
-  // Load saved signals for today if exist
+  // Background timer: tracks 24h reset & auto-detects 1 min past last trade time
   useEffect(() => {
-    try {
-      const today = getCairoDateStr();
-      const saved = localStorage.getItem('ah_vip_today_signals_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length > 0) {
-          setSignals(parsed.signals);
-          setHasGenerated(true);
+    const checkExpirationAndCountdown = () => {
+      let passedCairoSeconds = 0;
+      try {
+        const nowCairoStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Africa/Cairo',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const [h, m, s] = nowCairoStr.split(':').map(Number);
+        passedCairoSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+      } catch (e) {
+        const now = new Date();
+        passedCairoSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      }
+
+      const remainingSecs = Math.max(0, 86400 - passedCairoSeconds);
+      const hLeft = Math.floor(remainingSecs / 3600);
+      setHoursLeftOnly(hLeft);
+
+      // Check if 1 minute has passed after last generated trade time in Egypt
+      if (signals && signals.length > 0) {
+        const lastSignal = signals[signals.length - 1];
+        if (lastSignal && lastSignal.time) {
+          const lastMins = parseTimeToMinutes(lastSignal.time);
+          const expirationTargetSecs = (lastMins + 1) * 60; // time of last trade + 1 min
+          if (passedCairoSeconds >= expirationTargetSecs) {
+            setIsFreePlanExpired(true);
+            return;
+          }
         }
       }
-    } catch(e) {}
-  }, []);
-
-  // Main 24h Countdown Timer Interval
-  useEffect(() => {
-    const updateCountdown = () => {
-      const now = Date.now();
-      const elapsed = usageData.lastTimestamp > 0 ? (now - usageData.lastTimestamp) : 24 * 60 * 60 * 1000;
-      const total24h = 24 * 60 * 60 * 1000;
-
-      if (usageData.lastTimestamp > 0 && elapsed < total24h && usageData.count >= MAX_DAILY_SIGNALS) {
-        const remainingMs = total24h - elapsed;
-        const h = Math.floor(remainingMs / (1000 * 60 * 60));
-        const m = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-        const s = Math.floor((remainingMs % (1000 * 60)) / 1000);
-
-        setCountdownHours(String(h).padStart(2, '0'));
-        setCountdownMins(String(m).padStart(2, '0'));
-        setCountdownSecs(String(s).padStart(2, '0'));
-      } else {
-        setCountdownHours('00');
-        setCountdownMins('00');
-        setCountdownSecs('00');
-      }
+      setIsFreePlanExpired(false);
     };
 
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
+    checkExpirationAndCountdown();
+    const interval = setInterval(checkExpirationAndCountdown, 1000);
     return () => clearInterval(interval);
-  }, [usageData]);
+  }, [signals]);
 
   // Interactive feature: Local Star/Favorite state for specific signals
   const [favorites, setFavorites] = useState<Record<number, boolean>>({});
@@ -228,7 +220,27 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       return;
     }
 
+    const today = getCairoDateStr();
     const now = Date.now();
+
+    // If signals were already generated today, keep the exact same 10 signals fixed!
+    try {
+      const saved = localStorage.getItem('ah_vip_today_signals_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length === MAX_DAILY_SIGNALS) {
+          setTimeError('');
+          setIsGenerating(true);
+          setTimeout(() => {
+            setSignals(parsed.signals);
+            setIsGenerating(false);
+            setHasGenerated(true);
+          }, 1200);
+          return;
+        }
+      }
+    } catch(e) {}
+
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     
@@ -289,9 +301,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         lastTimestamp: now,
         count: MAX_DAILY_SIGNALS
       };
-      setUsageData(newUsage);
       
-      const today = getCairoDateStr();
       try {
         localStorage.setItem('ah_vip_24h_limit_v2', JSON.stringify(newUsage));
         localStorage.setItem('ah_vip_today_signals_v1', JSON.stringify({
@@ -519,6 +529,47 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                   <span>بدء استخراج الإشارات الفورية VIP</span>
                 </span>
               </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* Free Plan Expired Notice Banner (Triggers 1 min after last trade time) */}
+          <AnimatePresence>
+            {isFreePlanExpired && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.97, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 10 }}
+                className="mt-5 p-5 rounded-3xl bg-gradient-to-b from-[#120e2e]/95 via-[#090a1c]/95 to-[#050612]/95 border border-purple-500/40 shadow-[0_0_35px_rgba(168,85,247,0.25)] flex flex-col items-center justify-center text-center gap-3.5 relative overflow-hidden backdrop-blur-xl"
+              >
+                <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-purple-500/60 to-transparent" />
+                
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/35 text-purple-300 text-xs font-black shadow-inner">
+                  <AlertCircle className="w-4 h-4 text-purple-400 animate-pulse" />
+                  <span>انتهت الخطة المجانية لهذا اليوم</span>
+                </div>
+
+                <p className="text-xs text-slate-300 font-bold max-w-md leading-relaxed">
+                  تم الانتهاء من صفقات الخطة المجانية اليومية. للحصول على صفقات حية بريميوم غير محدودة، تواصل مع الدعم الفني:
+                </p>
+
+                {/* Telegram Username Support Link */}
+                <a
+                  href={SUPPORT_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-black text-xs shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all cursor-pointer group"
+                >
+                  <MessageCircle className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
+                  <span>@A_H_QUOTEX_SUPPORT</span>
+                </a>
+
+                {/* Timer in Hours ONLY */}
+                <div className="flex items-center gap-2.5 mt-1 px-5 py-2 rounded-2xl bg-white/[0.03] border border-cyan-500/30 shadow-inner">
+                  <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
+                  <span className="text-xs font-bold text-slate-400">متبقي على التجديد:</span>
+                  <span className="font-mono text-base font-black text-cyan-300 dir-ltr">{hoursLeftOnly} ساعة</span>
+                </div>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
