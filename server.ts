@@ -41,6 +41,11 @@ const initializeDb = () => {
     );
   `);
 
+  // Clear any existing IP locks / rate limits on startup
+  try {
+    db.exec('DELETE FROM rate_limits;');
+  } catch(e) {}
+
   // Seed codes
   const initialCodes = [
     'AHVIP-4827', 'AHVIP-9154', 'AHVIP-3068', 'AHVIP-7412', 'AHVIP-5689',
@@ -201,6 +206,16 @@ app.get('/api/session', authenticate, (req, res) => {
 app.post('/api/logout', (req, res) => {
   res.clearCookie('ah_vip_session');
   res.json({ success: true });
+});
+
+// Clear all IP locks and rate limits endpoint
+app.post('/api/clear-rate-limits', (req, res) => {
+  try {
+    db.exec('DELETE FROM rate_limits;');
+    res.json({ success: true, message: 'All IP locks cleared successfully' });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to clear IP locks' });
+  }
 });
 
 // --- Admin Routes ---

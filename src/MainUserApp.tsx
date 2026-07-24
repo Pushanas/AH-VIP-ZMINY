@@ -90,10 +90,10 @@ export default function MainUserApp() {
                   </div>
                 </div>
 
-                {/* Cairo Live Clock */}
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-xs font-bold text-slate-200">
+                {/* Live Clock */}
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00F0FF]/10 border border-[#00F0FF]/30 font-mono text-xs font-bold text-slate-100 shadow-[0_0_15px_rgba(0,240,255,0.1)]">
                   <Clock className="w-3.5 h-3.5 text-[#00F0FF] animate-pulse" />
-                  <span>{cairoTime || "00:00:00"}</span>
+                  <span className="text-white dir-ltr font-mono">{cairoTime || "00:00:00"}</span>
                 </div>
               </div>
 

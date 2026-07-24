@@ -21,6 +21,24 @@ const getEgyptTimeInit = () => {
   }
 };
 
+const getEgyptEndTimeInit = () => {
+  try {
+    const timeStr = new Date().toLocaleTimeString('en-US', { 
+      timeZone: 'Africa/Cairo', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: false 
+    });
+    const [h, m] = timeStr.split(':').map(Number);
+    let totalMins = (h || 0) * 60 + (m || 0) + 30; // 30 minutes interval
+    const endH = Math.floor(totalMins / 60) % 24;
+    const endM = totalMins % 60;
+    return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+  } catch(e) {
+    return "00:30";
+  }
+};
+
 const getCairoDateStr = () => {
   try {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
@@ -56,21 +74,8 @@ const CHANNEL_LINK = "https://t.me/AH_QUOTEX";
 const SUPPORT_LINK = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
-  // System Reset Key to force unlock all devices/phones locked under previous sessions
-  const SYSTEM_RESET_KEY = 'ah_vip_sys_reset_v10';
-  if (typeof window !== 'undefined') {
-    try {
-      if (localStorage.getItem(SYSTEM_RESET_KEY) !== 'done') {
-        localStorage.removeItem('ah_vip_locked_date');
-        localStorage.removeItem('ah_vip_today_signals_v1');
-        localStorage.removeItem('ah_vip_24h_limit_v2');
-        localStorage.setItem(SYSTEM_RESET_KEY, 'done');
-      }
-    } catch (e) {}
-  }
-
   const [startTime, setStartTime] = useState(getEgyptTimeInit());
-  const [endTime, setEndTime] = useState('');
+  const [endTime, setEndTime] = useState(getEgyptEndTimeInit());
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,18 +126,10 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
   const [countdownHours, setCountdownHours] = useState('00');
   const [countdownMins, setCountdownMins] = useState('00');
   const [countdownSecs, setCountdownSecs] = useState('00');
-  const [timeToResetStr, setTimeToResetStr] = useState('');
 
-  // Persistent Locked State (Auto shut down after last trade time or daily limit)
+  // Persistent Locked State (Auto shut down after last trade time or 10-trade daily limit)
   const [isLocked, setIsLocked] = useState<boolean>(() => {
     try {
-      if (typeof window !== 'undefined' && localStorage.getItem('ah_vip_sys_reset_v10') !== 'done') {
-        localStorage.removeItem('ah_vip_locked_date');
-        localStorage.removeItem('ah_vip_today_signals_v1');
-        localStorage.removeItem('ah_vip_24h_limit_v2');
-        localStorage.setItem('ah_vip_sys_reset_v10', 'done');
-        return false;
-      }
       const today = getCairoDateStr();
       const storedLockedDate = localStorage.getItem('ah_vip_locked_date');
       if (storedLockedDate === today) {
@@ -142,7 +139,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return false;
   });
 
-  // 24H Limit State
+  // 24H Usage State
   const [usageData, setUsageData] = useState(() => {
     try {
       const stored = localStorage.getItem('ah_vip_24h_limit_v2');
@@ -153,11 +150,12 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return { lastTimestamp: 0, count: 0 };
   });
 
-  const handleManualReset = () => {
+  const handleFullSystemReset = async () => {
     try {
       localStorage.removeItem('ah_vip_locked_date');
       localStorage.removeItem('ah_vip_today_signals_v1');
       localStorage.removeItem('ah_vip_24h_limit_v2');
+      await fetch('/api/clear-rate-limits', { method: 'POST' }).catch(() => {});
     } catch (e) {}
     setIsLocked(false);
     setSignals([]);
@@ -180,7 +178,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     } catch(e) {}
   }, []);
 
-  // Main 1-second interval checking auto-lock condition & countdown timer
+  // Main Interval: Automatic Lock Checking (Last trade passed OR 10/10 limit) & Countdown
   useEffect(() => {
     const checkAutoLockAndCountdown = () => {
       const today = getCairoDateStr();
@@ -195,7 +193,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         setIsLocked(false);
       }
 
-      // 1. Check if usage count exceeded daily limit (10/10)
+      // 1. Check if usage count reached 10 trades daily limit
       const elapsed = nowMs - usageData.lastTimestamp;
       const total24h = 24 * 60 * 60 * 1000;
       const isExpired24h = elapsed >= total24h;
@@ -208,12 +206,11 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         } catch (e) {}
       }
 
-      // 2. Check if the time of the LAST generated signal has passed
+      // 2. Check if the time of the LAST generated signal has passed in Cairo time
       if (signals && signals.length > 0) {
         const lastSignal = signals[signals.length - 1];
         if (lastSignal && lastSignal.time) {
           const lastSignalMins = parseTimeToMinutes(lastSignal.time);
-          // If current Cairo time is past the last signal's time, auto-lock!
           if (currentMins > lastSignalMins) {
             setIsLocked(true);
             try {
@@ -223,7 +220,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         }
       }
 
-      // Calculate exact remaining time until Cairo midnight (00:00:00) for countdown
+      // Calculate remaining time until Cairo midnight (00:00:00)
       let remainingSecs = 0;
       try {
         const nowCairoStr = new Date().toLocaleTimeString('en-US', {
@@ -246,14 +243,9 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       const m = Math.floor((remainingSecs % 3600) / 60);
       const s = remainingSecs % 60;
 
-      const hStr = String(h).padStart(2, '0');
-      const mStr = String(m).padStart(2, '0');
-      const sStr = String(s).padStart(2, '0');
-
-      setCountdownHours(hStr);
-      setCountdownMins(mStr);
-      setCountdownSecs(sStr);
-      setTimeToResetStr(`${hStr}:${mStr}:${sStr}`);
+      setCountdownHours(String(h).padStart(2, '0'));
+      setCountdownMins(String(m).padStart(2, '0'));
+      setCountdownSecs(String(s).padStart(2, '0'));
     };
 
     checkAutoLockAndCountdown();
@@ -295,7 +287,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       return;
     }
 
-    // Check 24-hour 10 trades limit
+    // Check 10-trade limit
     const now = Date.now();
     const isExpired24h = (now - usageData.lastTimestamp) >= 24 * 60 * 60 * 1000;
     const effectiveCount = isExpired24h ? 0 : usageData.count;
@@ -330,8 +322,9 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setTimeout(() => {
       const generated: Signal[] = [];
       let currentTime = totalStartMins + 5;
+      const remainingQuota = MAX_DAILY_SIGNALS - effectiveCount;
 
-      while (currentTime < totalEndMins && generated.length < MAX_DAILY_SIGNALS) {
+      while (currentTime < totalEndMins && generated.length < remainingQuota) {
         const hours = Math.floor(currentTime / 60) % 24;
         const minutes = currentTime % 60;
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
@@ -350,7 +343,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       }
 
       // Fallback if time window was narrow
-      if (generated.length === 0) {
+      if (generated.length === 0 && remainingQuota > 0) {
         const hours = Math.floor((totalStartMins + 2) / 60) % 24;
         const minutes = (totalStartMins + 2) % 60;
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
@@ -364,9 +357,10 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       
       // Save usage & today's signals
       const generatedCount = generated.length;
+      const newTotalCount = effectiveCount + generatedCount;
       const newUsage = {
         lastTimestamp: isExpired24h ? now : usageData.lastTimestamp || now,
-        count: isExpired24h ? generatedCount : usageData.count + generatedCount
+        count: newTotalCount
       };
       setUsageData(newUsage);
       
@@ -378,6 +372,13 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
           signals: generated
         }));
       } catch(e) {}
+
+      // If reached 10 trades limit, lock for the day
+      if (newTotalCount >= MAX_DAILY_SIGNALS) {
+        try {
+          localStorage.setItem('ah_vip_locked_date', today);
+        } catch (e) {}
+      }
 
       setSignals(generated);
       setIsGenerating(false);
@@ -428,7 +429,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
         transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
         className="w-full bg-gradient-to-b from-[#0e1226] via-[#080b1a] to-[#04060e] border border-purple-500/30 rounded-3xl p-6 sm:p-12 relative overflow-hidden backdrop-blur-3xl shadow-[0_25px_60px_rgba(168,85,247,0.18)] text-center flex flex-col items-center justify-center my-2"
       >
-        {/* Animated glowing neon background rings & particle glows */}
+        {/* Animated glowing neon background rings */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-purple-600/15 blur-[110px] animate-pulse" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border border-purple-500/15 animate-[spin_14s_linear_infinite]" />
@@ -441,7 +442,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
           </span>
-          <span>إغلاق تلقائي للنظام • انتهى وقت آخر صفقة اليوم</span>
+          <span>إغلاق البوت تلقائياً • نظام VIP اليومي</span>
         </div>
 
         {/* Glowing Shield & Lock Icon Centerpiece */}
@@ -456,19 +457,27 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
 
         {/* Main Arabic Headline */}
         <h2 className="relative z-10 text-2xl sm:text-3xl font-black text-white tracking-tight mb-3">
-          تم إغلاق البوت تلقائياً بعد انتهاء وقت آخر صفقة!
+          تم قفل البوت • انتهى حد الصفقات اليومي أو وقت آخر صفقة!
         </h2>
 
-        {/* Explanation Message */}
-        <p className="relative z-10 text-xs sm:text-sm text-slate-300 font-bold max-w-lg leading-relaxed mb-6">
-          تم قفل النظام لحماية جودة التداول بمجرد وصول وقت آخر صفقة استخرجت اليوم. للحصول على صفقات حية غير محدودة على مدار الساعة ودقة VIP عالية، يمكنك التواصل مع الدعم الفني.
-        </p>
+        {/* Premium Subscription Message */}
+        <div className="relative z-10 max-w-lg bg-white/[0.03] border border-purple-500/20 rounded-2xl p-5 mb-6 text-right sm:text-center">
+          <div className="flex items-center gap-2 text-purple-300 font-black text-sm mb-2 justify-center">
+            <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
+            <span>رسالة الاشتراك في الباقة البريميوم (VIP Premium)</span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-300 font-bold leading-relaxed">
+            عزيزي المتداول، تم إغلاق النظام تلقائياً بعد استنفاد الحد اليومي (10 صفقات) أو انتهاء الوقت المحدد لآخر صفقة استخرجت اليوم لحماية رأس مالك وترجيح الدقة.
+            <br className="hidden sm:block" />
+            للحصول على <span className="text-purple-300 font-black underline decoration-purple-500">صفقات حية غير محدودة على مدار 24 ساعة</span> مع نسبة نجاح تتجاوز 98% وتوليد فوري بدون انتظار، اشترك الآن في النسخة البريميوم.
+          </p>
+        </div>
 
         {/* Digital Clock Countdown Display */}
         <div className="relative z-10 mb-8 w-full max-w-sm bg-[#060918]/90 border border-cyan-500/30 rounded-3xl p-5 shadow-[0_0_35px_rgba(0,240,255,0.15)] flex flex-col items-center">
           <div className="flex items-center gap-2 text-xs font-black text-cyan-400 mb-3.5">
             <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '4s' }} />
-            <span>متبقي على فتح البوت وتجديد الصفقات المجانية</span>
+            <span>متبقي على فتح البوت وتجديد الصفقات المجانية اليومية</span>
           </div>
           
           <div className="flex items-center justify-center gap-3 font-mono text-2xl sm:text-3xl font-black text-white dir-ltr">
@@ -499,51 +508,29 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
           </div>
         </div>
 
-        {/* Action Button: Telegram Tech Support */}
-        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md">
+        {/* Action Button: TECHNICAL SUPPORT ICON/BUTTON ONLY */}
+        <div className="relative z-10 flex items-center justify-center w-full max-w-md">
           <motion.a
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             href={SUPPORT_LINK}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:flex-1 h-14 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-[0_0_35px_rgba(168,85,247,0.45)] border border-purple-400/50 transition-all cursor-pointer group relative overflow-hidden"
+            className="w-full h-14 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-[0_0_35px_rgba(168,85,247,0.45)] border border-purple-400/50 transition-all cursor-pointer group relative overflow-hidden"
           >
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
             </span>
-            <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span>تواصل بالدعم الفني</span>
-          </motion.a>
-
-          <motion.a
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            href={CHANNEL_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full sm:w-auto px-6 h-14 rounded-2xl bg-white/[0.05] hover:bg-white/10 text-cyan-300 border border-white/10 hover:border-cyan-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-          >
-            <Send className="w-4 h-4 text-cyan-400" />
-            <span>القناة الرسمية</span>
+            <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform text-white" />
+            <span>تواصل مع الدعم الفني للاشتراك (Support)</span>
           </motion.a>
         </div>
 
         {/* System Footer Note */}
-        <div className="relative z-10 flex flex-col items-center mt-6 gap-2">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleManualReset}
-            className="text-xs font-bold text-slate-300 hover:text-emerald-400 transition-colors flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-            <span>تصفير وإعادة تعيين البوت للاختبار الآن</span>
-          </motion.button>
-          
+        <div className="relative z-10 flex flex-col items-center mt-6">
           <p className="text-[10px] text-slate-500 font-bold">
-            نظام AH VIP الذكي لحماية الصفقات وإدارتها
+            نظام AH VIP الذكي • حماية الصفقات وإدارة المخاطر
           </p>
         </div>
       </motion.div>
@@ -576,18 +563,11 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
               <span>فترة الصفقة: 1M</span>
             </div>
 
-            {/* 24H 10-Trade Limit Badge */}
+            {/* Daily Signals Badge */}
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-emerald-400 text-[10px] font-black tracking-wide">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>الحد اليومي: {currentCount}/{MAX_DAILY_SIGNALS} صفقات</span>
+              <span>الإشارات اليومية: {currentCount}/{MAX_DAILY_SIGNALS} صفقات</span>
             </div>
-
-            {timeToResetStr && (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/25 bg-amber-500/5 text-amber-400 text-[10px] font-mono font-black tracking-wide">
-                <Clock className="w-3.5 h-3.5 animate-spin" />
-                <span>إعادة التعيين خلال: {timeToResetStr}</span>
-              </div>
-            )}
           </div>
         </div>
         
@@ -868,9 +848,9 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                           <div className="h-4.5 w-px bg-white/10 hidden sm:block" />
                           
                           {/* Time Stamp badge */}
-                          <div className="flex items-center gap-1 text-xs font-mono text-slate-400 font-bold bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <Clock className="w-3 h-3 text-slate-500" />
-                            <span>{signal.time}</span>
+                          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200 font-bold bg-[#00F0FF]/10 px-2.5 py-1 rounded-lg border border-[#00F0FF]/25 shadow-inner">
+                            <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
+                            <span className="text-white font-mono">{signal.time}</span>
                           </div>
                         </div>
                       </div>
