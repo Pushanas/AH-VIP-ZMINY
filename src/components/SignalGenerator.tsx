@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ASSET_PAIRS, DIRECTIONS, Signal } from '../types';
 import { copyToClipboard } from '../utils';
 import { 
   TrendingUp, TrendingDown, Search, RefreshCw, Copy, Check, Zap, Timer,
-  Star, Bookmark, Activity, Cpu, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Sparkles, Clock
+  Star, Bookmark, Activity, Cpu, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Sparkles, Clock, Send, MessageCircle, AlertCircle, ShieldAlert, Lock
 } from 'lucide-react';
 
 const getEgyptTimeInit = () => {
@@ -21,7 +21,54 @@ const getEgyptTimeInit = () => {
   }
 };
 
+const getCairoDateStr = () => {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  } catch (e) {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
+const getCairoTimeMinutes = () => {
+  try {
+    const timeStr = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Africa/Cairo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const [h, m] = timeStr.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  } catch (e) {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }
+};
+
+const parseTimeToMinutes = (timeStr: string) => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const MAX_DAILY_SIGNALS = 10;
+const CHANNEL_LINK = "https://t.me/AH_QUOTEX";
+const SUPPORT_LINK = "https://t.me/A_H_QUOTEX_SUPPORT";
+
 export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
+  // System Reset Key to force unlock all devices/phones locked under previous sessions
+  const SYSTEM_RESET_KEY = 'ah_vip_sys_reset_v10';
+  if (typeof window !== 'undefined') {
+    try {
+      if (localStorage.getItem(SYSTEM_RESET_KEY) !== 'done') {
+        localStorage.removeItem('ah_vip_locked_date');
+        localStorage.removeItem('ah_vip_today_signals_v1');
+        localStorage.removeItem('ah_vip_24h_limit_v2');
+        localStorage.setItem(SYSTEM_RESET_KEY, 'done');
+      }
+    } catch (e) {}
+  }
+
   const [startTime, setStartTime] = useState(getEgyptTimeInit());
   const [endTime, setEndTime] = useState('');
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -33,6 +80,192 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
   const [filterDirection, setFilterDirection] = useState<'ALL' | 'CALL' | 'PUT'>('ALL');
   const [hasGenerated, setHasGenerated] = useState(false);
   
+  // Interactive Neon Glow Micro-Interaction State for Generate Button
+  const [btnGlow, setBtnGlow] = useState<{ x: number; y: number; active: boolean; isClicking: boolean }>({
+    x: 0,
+    y: 0,
+    active: false,
+    isClicking: false
+  });
+
+  const handleBtnPointerMove = (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    let clientX = 0;
+    let clientY = 0;
+    if ('touches' in e && e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if ('clientX' in e) {
+      clientX = (e as React.MouseEvent).clientX;
+      clientY = (e as React.MouseEvent).clientY;
+    }
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    setBtnGlow(prev => ({ ...prev, x, y, active: true }));
+  };
+
+  const handleBtnPointerDown = (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+    handleBtnPointerMove(e);
+    setBtnGlow(prev => ({ ...prev, isClicking: true, active: true }));
+  };
+
+  const handleBtnPointerUp = () => {
+    setBtnGlow(prev => ({ ...prev, isClicking: false }));
+  };
+
+  const handleBtnPointerLeave = () => {
+    setBtnGlow(prev => ({ ...prev, active: false, isClicking: false }));
+  };
+
+  // Digital Countdown Timer State for Lock Screen
+  const [countdownHours, setCountdownHours] = useState('00');
+  const [countdownMins, setCountdownMins] = useState('00');
+  const [countdownSecs, setCountdownSecs] = useState('00');
+  const [timeToResetStr, setTimeToResetStr] = useState('');
+
+  // Persistent Locked State (Auto shut down after last trade time or daily limit)
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined' && localStorage.getItem('ah_vip_sys_reset_v10') !== 'done') {
+        localStorage.removeItem('ah_vip_locked_date');
+        localStorage.removeItem('ah_vip_today_signals_v1');
+        localStorage.removeItem('ah_vip_24h_limit_v2');
+        localStorage.setItem('ah_vip_sys_reset_v10', 'done');
+        return false;
+      }
+      const today = getCairoDateStr();
+      const storedLockedDate = localStorage.getItem('ah_vip_locked_date');
+      if (storedLockedDate === today) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  // 24H Limit State
+  const [usageData, setUsageData] = useState(() => {
+    try {
+      const stored = localStorage.getItem('ah_vip_24h_limit_v2');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch(e) {}
+    return { lastTimestamp: 0, count: 0 };
+  });
+
+  const handleManualReset = () => {
+    try {
+      localStorage.removeItem('ah_vip_locked_date');
+      localStorage.removeItem('ah_vip_today_signals_v1');
+      localStorage.removeItem('ah_vip_24h_limit_v2');
+    } catch (e) {}
+    setIsLocked(false);
+    setSignals([]);
+    setHasGenerated(false);
+    setUsageData({ lastTimestamp: 0, count: 0 });
+  };
+
+  // Load saved signals for today if exist
+  useEffect(() => {
+    try {
+      const today = getCairoDateStr();
+      const saved = localStorage.getItem('ah_vip_today_signals_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length > 0) {
+          setSignals(parsed.signals);
+          setHasGenerated(true);
+        }
+      }
+    } catch(e) {}
+  }, []);
+
+  // Main 1-second interval checking auto-lock condition & countdown timer
+  useEffect(() => {
+    const checkAutoLockAndCountdown = () => {
+      const today = getCairoDateStr();
+      const currentMins = getCairoTimeMinutes();
+      const nowMs = Date.now();
+
+      // Reset lock if date changed to a new Cairo day
+      const storedLockedDate = localStorage.getItem('ah_vip_locked_date');
+      if (storedLockedDate && storedLockedDate !== today) {
+        localStorage.removeItem('ah_vip_locked_date');
+        localStorage.removeItem('ah_vip_today_signals_v1');
+        setIsLocked(false);
+      }
+
+      // 1. Check if usage count exceeded daily limit (10/10)
+      const elapsed = nowMs - usageData.lastTimestamp;
+      const total24h = 24 * 60 * 60 * 1000;
+      const isExpired24h = elapsed >= total24h;
+      const effectiveCount = isExpired24h ? 0 : usageData.count;
+
+      if (effectiveCount >= MAX_DAILY_SIGNALS) {
+        setIsLocked(true);
+        try {
+          localStorage.setItem('ah_vip_locked_date', today);
+        } catch (e) {}
+      }
+
+      // 2. Check if the time of the LAST generated signal has passed
+      if (signals && signals.length > 0) {
+        const lastSignal = signals[signals.length - 1];
+        if (lastSignal && lastSignal.time) {
+          const lastSignalMins = parseTimeToMinutes(lastSignal.time);
+          // If current Cairo time is past the last signal's time, auto-lock!
+          if (currentMins > lastSignalMins) {
+            setIsLocked(true);
+            try {
+              localStorage.setItem('ah_vip_locked_date', today);
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Calculate exact remaining time until Cairo midnight (00:00:00) for countdown
+      let remainingSecs = 0;
+      try {
+        const nowCairoStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Africa/Cairo',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const [h, m, s] = nowCairoStr.split(':').map(Number);
+        const passedSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+        remainingSecs = Math.max(0, 86400 - passedSeconds);
+      } catch (e) {
+        const now = new Date();
+        const passedSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+        remainingSecs = Math.max(0, 86400 - passedSeconds);
+      }
+
+      const h = Math.floor(remainingSecs / 3600);
+      const m = Math.floor((remainingSecs % 3600) / 60);
+      const s = remainingSecs % 60;
+
+      const hStr = String(h).padStart(2, '0');
+      const mStr = String(m).padStart(2, '0');
+      const sStr = String(s).padStart(2, '0');
+
+      setCountdownHours(hStr);
+      setCountdownMins(mStr);
+      setCountdownSecs(sStr);
+      setTimeToResetStr(`${hStr}:${mStr}:${sStr}`);
+    };
+
+    checkAutoLockAndCountdown();
+    const interval = setInterval(checkAutoLockAndCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [usageData, signals]);
+
+  // Calculate current quota status
+  const nowMs = Date.now();
+  const is24HoursPassed = (nowMs - usageData.lastTimestamp) >= 24 * 60 * 60 * 1000;
+  const currentCount = is24HoursPassed ? 0 : usageData.count;
+
   // Interactive feature: Local Star/Favorite state for specific signals
   const [favorites, setFavorites] = useState<Record<number, boolean>>({});
 
@@ -62,6 +295,20 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       return;
     }
 
+    // Check 24-hour 10 trades limit
+    const now = Date.now();
+    const isExpired24h = (now - usageData.lastTimestamp) >= 24 * 60 * 60 * 1000;
+    const effectiveCount = isExpired24h ? 0 : usageData.count;
+
+    if (effectiveCount >= MAX_DAILY_SIGNALS) {
+      const today = getCairoDateStr();
+      setIsLocked(true);
+      try {
+        localStorage.setItem('ah_vip_locked_date', today);
+      } catch (e) {}
+      return;
+    }
+
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     
@@ -82,24 +329,56 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
 
     setTimeout(() => {
       const generated: Signal[] = [];
-      let currentMin = totalStartMins + 5;
-      
-      while (currentMin < totalEndMins) {
-        const hours = Math.floor(currentMin / 60) % 24;
-        const minutes = currentMin % 60;
-        const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      let currentTime = totalStartMins + 5;
 
+      while (currentTime < totalEndMins && generated.length < MAX_DAILY_SIGNALS) {
+        const hours = Math.floor(currentTime / 60) % 24;
+        const minutes = currentTime % 60;
+        const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        const pair = ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)];
+        const direction = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
+
+        generated.push({
+          pair,
+          time: timeString,
+          direction,
+          id: Math.random()
+        });
+
+        const randomMinutesToAdd = Math.floor(Math.random() * 7) + 2;
+        currentTime += randomMinutesToAdd;
+      }
+
+      // Fallback if time window was narrow
+      if (generated.length === 0) {
+        const hours = Math.floor((totalStartMins + 2) / 60) % 24;
+        const minutes = (totalStartMins + 2) % 60;
+        const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
         generated.push({
           pair: ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)],
           time: timeString,
           direction: DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)],
           id: Math.random()
         });
-        
-        const randomMinutesToAdd = Math.floor(Math.random() * 7) + 2;
-        currentMin += randomMinutesToAdd;
       }
       
+      // Save usage & today's signals
+      const generatedCount = generated.length;
+      const newUsage = {
+        lastTimestamp: isExpired24h ? now : usageData.lastTimestamp || now,
+        count: isExpired24h ? generatedCount : usageData.count + generatedCount
+      };
+      setUsageData(newUsage);
+      
+      const today = getCairoDateStr();
+      try {
+        localStorage.setItem('ah_vip_24h_limit_v2', JSON.stringify(newUsage));
+        localStorage.setItem('ah_vip_today_signals_v1', JSON.stringify({
+          date: today,
+          signals: generated
+        }));
+      } catch(e) {}
+
       setSignals(generated);
       setIsGenerating(false);
       setHasGenerated(true);
@@ -119,7 +398,6 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return matchesSearch && matchesDirection;
   });
 
-  // Sort signals: Favorites always bubble to the top for convenient trading access
   const sortedSignals = [...filteredSignals].sort((a, b) => {
     const aFav = favorites[a.id] ? 1 : 0;
     const bFav = favorites[b.id] ? 1 : 0;
@@ -141,6 +419,137 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  // IF LOCKED: Show Full-Width Animated Premium Lock Screen
+  if (isLocked) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.96, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full bg-gradient-to-b from-[#0e1226] via-[#080b1a] to-[#04060e] border border-purple-500/30 rounded-3xl p-6 sm:p-12 relative overflow-hidden backdrop-blur-3xl shadow-[0_25px_60px_rgba(168,85,247,0.18)] text-center flex flex-col items-center justify-center my-2"
+      >
+        {/* Animated glowing neon background rings & particle glows */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-purple-600/15 blur-[110px] animate-pulse" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border border-purple-500/15 animate-[spin_14s_linear_infinite]" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[440px] h-[440px] rounded-full border border-cyan-500/15 animate-[spin_20s_linear_infinite_reverse]" />
+        </div>
+
+        {/* Security Lock Badge */}
+        <div className="relative z-10 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-black mb-6 shadow-lg">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+          </span>
+          <span>إغلاق تلقائي للنظام • انتهى وقت آخر صفقة اليوم</span>
+        </div>
+
+        {/* Glowing Shield & Lock Icon Centerpiece */}
+        <div className="relative z-10 mb-6">
+          <div className="relative group">
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity animate-pulse" />
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[#080c1d] border-2 border-purple-500/40 flex items-center justify-center relative overflow-hidden shadow-2xl">
+              <ShieldAlert className="w-10 h-10 sm:w-12 sm:h-12 text-purple-400 animate-bounce" style={{ animationDuration: '3s' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Main Arabic Headline */}
+        <h2 className="relative z-10 text-2xl sm:text-3xl font-black text-white tracking-tight mb-3">
+          تم إغلاق البوت تلقائياً بعد انتهاء وقت آخر صفقة!
+        </h2>
+
+        {/* Explanation Message */}
+        <p className="relative z-10 text-xs sm:text-sm text-slate-300 font-bold max-w-lg leading-relaxed mb-6">
+          تم قفل النظام لحماية جودة التداول بمجرد وصول وقت آخر صفقة استخرجت اليوم. للحصول على صفقات حية غير محدودة على مدار الساعة ودقة VIP عالية، يمكنك التواصل مع الدعم الفني.
+        </p>
+
+        {/* Digital Clock Countdown Display */}
+        <div className="relative z-10 mb-8 w-full max-w-sm bg-[#060918]/90 border border-cyan-500/30 rounded-3xl p-5 shadow-[0_0_35px_rgba(0,240,255,0.15)] flex flex-col items-center">
+          <div className="flex items-center gap-2 text-xs font-black text-cyan-400 mb-3.5">
+            <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '4s' }} />
+            <span>متبقي على فتح البوت وتجديد الصفقات المجانية</span>
+          </div>
+          
+          <div className="flex items-center justify-center gap-3 font-mono text-2xl sm:text-3xl font-black text-white dir-ltr">
+            <div className="flex flex-col items-center">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-cyan-500/30 flex items-center justify-center shadow-inner text-cyan-300">
+                {countdownHours}
+              </div>
+              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">ساعة</span>
+            </div>
+            
+            <span className="text-cyan-400 -mt-5 animate-pulse text-xl sm:text-2xl">:</span>
+
+            <div className="flex flex-col items-center">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-cyan-500/30 flex items-center justify-center shadow-inner text-cyan-300">
+                {countdownMins}
+              </div>
+              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">دقيقة</span>
+            </div>
+
+            <span className="text-cyan-400 -mt-5 animate-pulse text-xl sm:text-2xl">:</span>
+
+            <div className="flex flex-col items-center">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] border border-purple-500/40 flex items-center justify-center shadow-inner text-purple-300">
+                {countdownSecs}
+              </div>
+              <span className="text-[10px] text-slate-400 font-sans font-bold mt-1.5">ثانية</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Button: Telegram Tech Support */}
+        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md">
+          <motion.a
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            href={SUPPORT_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:flex-1 h-14 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-[0_0_35px_rgba(168,85,247,0.45)] border border-purple-400/50 transition-all cursor-pointer group relative overflow-hidden"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
+            </span>
+            <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <span>تواصل بالدعم الفني</span>
+          </motion.a>
+
+          <motion.a
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            href={CHANNEL_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-6 h-14 rounded-2xl bg-white/[0.05] hover:bg-white/10 text-cyan-300 border border-white/10 hover:border-cyan-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <Send className="w-4 h-4 text-cyan-400" />
+            <span>القناة الرسمية</span>
+          </motion.a>
+        </div>
+
+        {/* System Footer Note */}
+        <div className="relative z-10 flex flex-col items-center mt-6 gap-2">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleManualReset}
+            className="text-xs font-bold text-slate-300 hover:text-emerald-400 transition-colors flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+            <span>تصفير وإعادة تعيين البوت للاختبار الآن</span>
+          </motion.button>
+          
+          <p className="text-[10px] text-slate-500 font-bold">
+            نظام AH VIP الذكي لحماية الصفقات وإدارتها
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 sm:gap-6 w-full max-w-full">
       
@@ -157,12 +566,28 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
             <Zap className="w-6 h-6 text-[#00F0FF] animate-pulse" />
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">وحدة استخراج الإشارات الذكية</h2>
-          <p className="text-xs font-semibold text-slate-400 mt-2 max-w-md">توليد أقوى إشارات التداول الذكية بدقة متناهية بالاعتماد على خوارزميات AH VIP المتطورة</p>
+          <p className="text-xs font-semibold text-slate-400 mt-2 max-w-md">توليد أقوى 10 صفقات تداول VIP بدقة متناهية بالاعتماد على خوارزميات AH VIP المتطورة</p>
           
-          {/* Duration Badge - Centered & Reduced Height */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-cyan-500/25 bg-cyan-500/5 text-cyan-400 text-[10px] font-black tracking-wide mt-4">
-            <Timer className="w-3.5 h-3.5 animate-pulse" />
-            <span>فترة تداول الصفقة: دقيقة واحدة (1M)</span>
+          {/* Status Badges & Limits Row */}
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+            {/* Duration Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-cyan-500/25 bg-cyan-500/5 text-cyan-400 text-[10px] font-black tracking-wide">
+              <Timer className="w-3.5 h-3.5 animate-pulse" />
+              <span>فترة الصفقة: 1M</span>
+            </div>
+
+            {/* 24H 10-Trade Limit Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-emerald-400 text-[10px] font-black tracking-wide">
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>الحد اليومي: {currentCount}/{MAX_DAILY_SIGNALS} صفقات</span>
+            </div>
+
+            {timeToResetStr && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/25 bg-amber-500/5 text-amber-400 text-[10px] font-mono font-black tracking-wide">
+                <Clock className="w-3.5 h-3.5 animate-spin" />
+                <span>إعادة التعيين خلال: {timeToResetStr}</span>
+              </div>
+            )}
           </div>
         </div>
         
@@ -274,14 +699,39 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 whileHover={{ scale: 1.015, y: -1 }}
                 whileTap={{ scale: 0.985 }}
                 onClick={handleGenerate}
+                onMouseMove={handleBtnPointerMove}
+                onTouchMove={handleBtnPointerMove}
+                onMouseDown={handleBtnPointerDown}
+                onTouchStart={handleBtnPointerDown}
+                onMouseUp={handleBtnPointerUp}
+                onTouchEnd={handleBtnPointerUp}
+                onMouseLeave={handleBtnPointerLeave}
                 disabled={isGenerating}
-                className="w-full h-16 relative overflow-hidden rounded-full shadow-[0_0_30px_rgba(0,240,255,0.25)] border border-[#00F0FF]/30 bg-gradient-to-r from-[#00F0FF] via-[#0066FF] to-[#8000FF] hover:brightness-110 active:brightness-95 transition-all cursor-pointer group flex items-center justify-center"
+                className="w-full h-16 relative overflow-hidden rounded-full shadow-[0_0_30px_rgba(0,240,255,0.25)] border border-[#00F0FF]/30 bg-gradient-to-r from-[#00F0FF] via-[#0066FF] to-[#8000FF] hover:brightness-110 active:brightness-95 transition-all cursor-pointer group flex items-center justify-center select-none"
               >
                 {/* Micro reflection shimmer */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none" />
                 
+                {/* Dynamic Mouse/Touch Neon Flare Micro-interaction */}
+                <div 
+                  className="absolute rounded-full pointer-events-none blur-md transition-opacity duration-300 ease-out"
+                  style={{
+                    left: `${btnGlow.x}px`,
+                    top: `${btnGlow.y}px`,
+                    transform: 'translate(-50%, -50%)',
+                    width: btnGlow.isClicking ? '220px' : '130px',
+                    height: btnGlow.isClicking ? '220px' : '130px',
+                    background: btnGlow.isClicking 
+                      ? 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(0,240,255,0.85) 30%, rgba(168,85,247,0.6) 65%, transparent 100%)'
+                      : 'radial-gradient(circle, rgba(0,240,255,0.8) 0%, rgba(0,102,255,0.5) 50%, transparent 100%)',
+                    opacity: btnGlow.active ? (btnGlow.isClicking ? 1 : 0.75) : 0,
+                    boxShadow: btnGlow.isClicking ? '0 0 50px #00F0FF, 0 0 90px #a855f7' : '0 0 30px #00F0FF',
+                    transition: 'width 0.15s ease-out, height 0.15s ease-out, opacity 0.25s ease-out'
+                  }}
+                />
+
                 {/* Premium typography and glowing icon */}
-                <span className="text-white font-black tracking-wider text-sm flex items-center gap-2.5">
+                <span className="relative z-10 text-white font-black tracking-wider text-sm flex items-center gap-2.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
                   <Sparkles className="w-5 h-5 text-white animate-pulse" />
                   <span>بدء استخراج الإشارات الفورية VIP</span>
                 </span>
@@ -472,3 +922,4 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     </div>
   );
 }
+
