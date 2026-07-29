@@ -581,6 +581,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
           <motion.div 
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15, transition: { duration: 0.25 } }}
             className="flex flex-col gap-4 sm:gap-5"
           >
             {/* Minimal Luxury Control Toolbar */}
@@ -649,106 +650,120 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
             </div>
 
             {/* Redesigned Luxury Signals List */}
-            <div className="flex flex-col gap-3">
-              {sortedSignals.length === 0 ? (
-                <div className="py-16 text-center text-slate-500 bg-white/[0.01] border border-white/5 rounded-3xl font-mono text-xs uppercase tracking-widest">
-                  No signals found matching search criteria
-                </div>
-              ) : (
-                sortedSignals.map((signal, idx) => {
-                  const isCall = signal.direction === 'CALL';
-                  const isCopied = copiedIndex === idx;
-                  const isFav = !!favorites[signal.id];
-                  
-                  return (
-                    <motion.div
-                      key={signal.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.98, y: 10 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      transition={{ duration: 0.45, type: "spring", bounce: 0.2 }}
-                      className={`group flex items-center justify-between p-4 sm:p-5 rounded-2xl border transition-all backdrop-blur-xl relative overflow-hidden ${
-                        isFav 
-                          ? 'bg-[#00F0FF]/5 border-[#00F0FF]/35 shadow-[0_4px_25px_rgba(0,240,255,0.05)]' 
-                          : 'bg-white/[0.02] hover:bg-white/[0.04] border-white/10 hover:border-[#00F0FF]/35 shadow-sm'
-                      }`}
-                    >
-                      {/* Left glow overlay on active hover */}
-                      <div className={`absolute top-0 bottom-0 left-0 w-1 transition-all duration-300 opacity-50 group-hover:opacity-100 ${
-                        isCall ? 'bg-[#00F0FF]' : 'bg-rose-500'
-                      }`} />
+            <div className="flex flex-col gap-3 min-h-[100px] relative">
+              <AnimatePresence mode="popLayout">
+                {sortedSignals.length === 0 ? (
+                  <motion.div
+                    key="no-signals"
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.25 }}
+                    className="py-16 text-center text-slate-500 bg-white/[0.01] border border-white/5 rounded-3xl font-mono text-xs uppercase tracking-widest"
+                  >
+                    No signals found matching search criteria
+                  </motion.div>
+                ) : (
+                  sortedSignals.map((signal, idx) => {
+                    const isCall = signal.direction === 'CALL';
+                    const isCopied = copiedIndex === idx;
+                    const isFav = !!favorites[signal.id];
+                    
+                    return (
+                      <motion.div
+                        key={signal.id}
+                        layout
+                        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: -10, transition: { duration: 0.2 } }}
+                        transition={{ 
+                          duration: 0.35, 
+                          delay: Math.min(idx * 0.03, 0.18),
+                          ease: [0.16, 1, 0.3, 1]
+                        }}
+                        className={`group flex items-center justify-between p-4 sm:p-5 rounded-2xl border transition-all backdrop-blur-xl relative overflow-hidden ${
+                          isFav 
+                            ? 'bg-[#00F0FF]/5 border-[#00F0FF]/35 shadow-[0_4px_25px_rgba(0,240,255,0.05)]' 
+                            : 'bg-white/[0.02] hover:bg-white/[0.04] border-white/10 hover:border-[#00F0FF]/35 shadow-sm'
+                        }`}
+                      >
+                        {/* Left glow overlay on active hover */}
+                        <div className={`absolute top-0 bottom-0 left-0 w-1 transition-all duration-300 opacity-50 group-hover:opacity-100 ${
+                          isCall ? 'bg-[#00F0FF]' : 'bg-rose-500'
+                        }`} />
 
-                      <div className="flex items-center gap-4 sm:gap-6">
-                        {/* Favorite Star action */}
-                        <motion.button
-                          whileHover={{ scale: 1.2 }}
-                          whileTap={{ scale: 0.8 }}
-                          onClick={() => toggleFavorite(signal.id)}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                            isFav 
-                              ? 'text-[#00F0FF] bg-[#00F0FF]/10' 
-                              : 'text-slate-600 hover:text-white hover:bg-white/5'
-                          }`}
-                        >
-                          <Star className="w-4 h-4" fill={isFav ? "currentColor" : "none"} />
-                        </motion.button>
+                        <div className="flex items-center gap-4 sm:gap-6">
+                          {/* Favorite Star action */}
+                          <motion.button
+                            whileHover={{ scale: 1.2 }}
+                            whileTap={{ scale: 0.8 }}
+                            onClick={() => toggleFavorite(signal.id)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                              isFav 
+                                ? 'text-[#00F0FF] bg-[#00F0FF]/10' 
+                                : 'text-slate-600 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            <Star className="w-4 h-4" fill={isFav ? "currentColor" : "none"} />
+                          </motion.button>
 
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-6">
-                          {/* Asset Name with spaced look */}
-                          <span className="font-mono text-sm sm:text-base font-black text-white tracking-wider" dir="ltr">
-                            {signal.pair}
-                          </span>
-                          
-                          <div className="h-4.5 w-px bg-white/10 hidden sm:block" />
-                          
-                          {/* Time Stamp badge */}
-                          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200 font-bold bg-[#00F0FF]/10 px-2.5 py-1 rounded-lg border border-[#00F0FF]/25 shadow-inner">
-                            <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
-                            <span className="text-white font-mono">{signal.time}</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-6">
+                            {/* Asset Name with spaced look */}
+                            <span className="font-mono text-sm sm:text-base font-black text-white tracking-wider" dir="ltr">
+                              {signal.pair}
+                            </span>
+                            
+                            <div className="h-4.5 w-px bg-white/10 hidden sm:block" />
+                            
+                            {/* Time Stamp badge */}
+                            <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200 font-bold bg-[#00F0FF]/10 px-2.5 py-1 rounded-lg border border-[#00F0FF]/25 shadow-inner">
+                              <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
+                              <span className="text-white font-mono">{signal.time}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Right directions and actions */}
-                      <div className="flex items-center gap-3 sm:gap-5">
-                        
-                        {/* Call/Put Direction badging with vector icons */}
-                        <div className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black tracking-wider ${
-                          isCall 
-                            ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/10' 
-                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/10'
-                        }`}>
-                          {isCall ? (
-                            <>
-                              <ArrowUpRight className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '2.5s' }} />
-                              <span>CALL 🟢</span>
-                            </>
-                          ) : (
-                            <>
-                              <ArrowDownRight className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '2.5s' }} />
-                              <span>PUT 🔴</span>
-                            </>
-                          )}
+                        {/* Right directions and actions */}
+                        <div className="flex items-center gap-3 sm:gap-5">
+                          
+                          {/* Call/Put Direction badging with vector icons */}
+                          <div className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black tracking-wider ${
+                            isCall 
+                              ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/10' 
+                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/10'
+                          }`}>
+                            {isCall ? (
+                              <>
+                                <ArrowUpRight className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '2.5s' }} />
+                                <span>CALL 🟢</span>
+                              </>
+                            ) : (
+                              <>
+                                <ArrowDownRight className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '2.5s' }} />
+                                <span>PUT 🔴</span>
+                              </>
+                            )}
+                          </div>
+                          
+                          {/* Copy specific line item */}
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleCopySingle(signal, idx)}
+                            className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-all ${
+                              isCopied 
+                                ? 'bg-[#00F0FF]/15 text-[#00F0FF] border border-[#00F0FF]/30 shadow-[0_0_15px_rgba(0,240,255,0.15)]' 
+                                : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-transparent'
+                            }`}
+                          >
+                            {isCopied ? <Check className="w-4 h-4 text-[#00F0FF]" /> : <Copy className="w-4 h-4" />}
+                          </motion.button>
                         </div>
-                        
-                        {/* Copy specific line item */}
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleCopySingle(signal, idx)}
-                          className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-all ${
-                            isCopied 
-                              ? 'bg-[#00F0FF]/15 text-[#00F0FF] border border-[#00F0FF]/30 shadow-[0_0_15px_rgba(0,240,255,0.15)]' 
-                              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-transparent'
-                          }`}
-                        >
-                          {isCopied ? <Check className="w-4 h-4 text-[#00F0FF]" /> : <Copy className="w-4 h-4" />}
-                        </motion.button>
-                      </div>
-                    </motion.div>
-                  );
-                })
-              )}
+                      </motion.div>
+                    );
+                  })
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
