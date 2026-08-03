@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, KeyRound, ShieldCheck, ShieldAlert, Eye, EyeOff, Sparkles, MessageCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
-const REQUIRED_PASSWORD = "VIPGOAL202";
+const REQUIRED_PASSWORD = "PUSH-PRO";
 const SUPPORT_URL = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 interface SecurityGateProps {
@@ -18,15 +18,26 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     }
   });
 
-  // Purge any stored old password immediately on mount
+  // Purge any stored old password immediately on mount & monitor for changes
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('ah_vip_auth_pass_v1');
-      if (stored !== REQUIRED_PASSWORD) {
-        localStorage.removeItem('ah_vip_auth_pass_v1');
-        setIsUnlocked(false);
-      }
-    } catch (e) {}
+    const checkAndEnforcePassword = () => {
+      try {
+        const stored = localStorage.getItem('ah_vip_auth_pass_v1');
+        if (stored !== REQUIRED_PASSWORD) {
+          localStorage.removeItem('ah_vip_auth_pass_v1');
+          setIsUnlocked(false);
+        }
+      } catch (e) {}
+    };
+
+    checkAndEnforcePassword();
+    window.addEventListener('storage', checkAndEnforcePassword);
+    const interval = setInterval(checkAndEnforcePassword, 1000);
+
+    return () => {
+      window.removeEventListener('storage', checkAndEnforcePassword);
+      clearInterval(interval);
+    };
   }, []);
 
   const [password, setPassword] = useState('');
