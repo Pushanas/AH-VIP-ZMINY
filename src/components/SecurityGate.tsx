@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, KeyRound, ShieldCheck, ShieldAlert, Eye, EyeOff, Sparkles, MessageCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
-const REQUIRED_PASSWORD = "PUSH-PRO";
+const REQUIRED_PASSWORD = "AH_VIP_BOT889";
 const SUPPORT_URL = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 interface SecurityGateProps {
