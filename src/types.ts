@@ -3,6 +3,7 @@ export interface Signal {
   pair: string;
   direction: 'CALL' | 'PUT';
   id?: number;
+  gapMinutes?: number;
 }
 
 export const ASSET_PAIRS = [

@@ -4,7 +4,7 @@ import { ASSET_PAIRS, DIRECTIONS, Signal } from '../types';
 import { copyToClipboard } from '../utils';
 import { 
   TrendingUp, TrendingDown, Search, RefreshCw, Copy, Check, Zap, Timer,
-  Star, Bookmark, Activity, Cpu, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Sparkles, Clock, Send, MessageCircle, AlertCircle, ShieldAlert, Lock
+  Star, Bookmark, Activity, Cpu, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Sparkles, Clock, Send, MessageCircle, AlertCircle, ShieldAlert, Lock, Split
 } from 'lucide-react';
 
 const getEgyptTimeInit = () => {
@@ -17,7 +17,7 @@ const getEgyptTimeInit = () => {
     });
     return egyptTimeStr.slice(0, 5);
   } catch(e) {
-    return "00:00";
+    return "09:00";
   }
 };
 
@@ -30,12 +30,12 @@ const getEgyptEndTimeInit = () => {
       hour12: false 
     });
     const [h, m] = timeStr.split(':').map(Number);
-    let totalMins = (h || 0) * 60 + (m || 0) + 30; // 30 minutes interval
+    let totalMins = (h || 0) * 60 + (m || 0) + 45; // 45 minutes default window for rich gap signals
     const endH = Math.floor(totalMins / 60) % 24;
     const endM = totalMins % 60;
     return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
   } catch(e) {
-    return "00:30";
+    return "10:00";
   }
 };
 
@@ -47,39 +47,21 @@ const getCairoDateStr = () => {
   }
 };
 
-const getCairoTimeMinutes = () => {
-  try {
-    const timeStr = new Date().toLocaleTimeString('en-US', {
-      timeZone: 'Africa/Cairo',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  } catch (e) {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  }
-};
-
 const parseTimeToMinutes = (timeStr: string) => {
   if (!timeStr) return 0;
   const [h, m] = timeStr.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 };
 
-const MAX_DAILY_SIGNALS = 10;
-const CHANNEL_LINK = "https://t.me/AH_QUOTEX";
 const SUPPORT_LINK = "https://t.me/A_H_QUOTEX_SUPPORT";
 
 export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
-  // Load saved signals for today on mount & clear legacy locks
+  // Load saved signals for today on mount
   useEffect(() => {
     try {
       localStorage.removeItem('ah_vip_locked_date');
       const today = getCairoDateStr();
-      const saved = localStorage.getItem('ah_vip_today_signals_v1');
+      const saved = localStorage.getItem('ah_vip_today_signals_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length > 0) {
@@ -93,6 +75,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
 
   const [startTime, setStartTime] = useState(getEgyptTimeInit());
   const [endTime, setEndTime] = useState(getEgyptEndTimeInit());
+  const [gapMode, setGapMode] = useState<'STANDARD' | 'GAP_SYSTEM'>('GAP_SYSTEM');
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,10 +122,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     setBtnGlow(prev => ({ ...prev, active: false, isClicking: false }));
   };
 
-  // Digital Countdown & Free Plan Expiration Timer State
-  const [countdownHours, setCountdownHours] = useState('00');
-  const [countdownMins, setCountdownMins] = useState('00');
-  const [countdownSecs, setCountdownSecs] = useState('00');
+  // Digital Countdown State
   const [isFreePlanExpired, setIsFreePlanExpired] = useState(false);
   const [hoursLeftOnly, setHoursLeftOnly] = useState(0);
 
@@ -191,16 +171,16 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return () => clearInterval(interval);
   }, [signals]);
 
-  // Interactive feature: Local Star/Favorite state for specific signals
+  // Local Star/Favorite state
   const [favorites, setFavorites] = useState<Record<number, boolean>>({});
 
   // Dynamic Scanning simulation step messages
   const [scanStep, setScanStep] = useState(0);
   const scanMessages = [
-    lang === 'ar' ? "جارِ الاتصال بخادم البورصة الآمن..." : "Securing exchange server link...",
-    lang === 'ar' ? "جارِ تحليل قنوات السيولة وتدفقات الـ OTC..." : "Analyzing liquidity pool & OTC flow...",
-    lang === 'ar' ? "جارِ استخلاص خوارزميات الدعم والمقاومة الذكية..." : "Calculating support & resistance vectors...",
-    lang === 'ar' ? "تصفية إشارات الـ VIP عالية الاحتمالية..." : "Filtering optimal high-probability signals..."
+    lang === 'ar' ? "جارِ الاتصال بخادم صفقات الفجوات الـ OTC..." : "Securing OTC gap server link...",
+    lang === 'ar' ? "جارِ حساب فجوات التداول الذكية (2-8 دقائق)..." : "Calculating 2-8 min gap intervals...",
+    lang === 'ar' ? "جارِ استخلاص إشارات الدعم والمقاومة السعرية..." : "Extracting optimal support & resistance vectors...",
+    lang === 'ar' ? "تصفية أقوى صفقات الفجوات عالية الدقة VIP..." : "Filtering high-probability gap trades..."
   ];
 
   useEffect(() => {
@@ -214,6 +194,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     return () => clearInterval(interval);
   }, [isGenerating]);
 
+  // Gap Signals Generation System (صفقات فجوات)
   const handleGenerate = () => {
     if (!startTime || !endTime) {
       setTimeError(lang === 'ar' ? 'يرجى تحديد وقت البدء والانتهاء' : 'Please select start and end time');
@@ -223,24 +204,6 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     const today = getCairoDateStr();
     const now = Date.now();
 
-    // If signals were already generated today, keep the exact same 10 signals fixed!
-    try {
-      const saved = localStorage.getItem('ah_vip_today_signals_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === today && Array.isArray(parsed.signals) && parsed.signals.length === MAX_DAILY_SIGNALS) {
-          setTimeError('');
-          setIsGenerating(true);
-          setTimeout(() => {
-            setSignals(parsed.signals);
-            setIsGenerating(false);
-            setHasGenerated(true);
-          }, 1200);
-          return;
-        }
-      }
-    } catch(e) {}
-
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     
@@ -248,7 +211,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     let totalEndMins = endH * 60 + endM;
 
     if (totalEndMins < totalStartMins) {
-      totalEndMins += 24 * 60; // next day
+      totalEndMins += 24 * 60; // handle cross-midnight
     }
 
     if (totalEndMins - totalStartMins <= 0) {
@@ -263,48 +226,52 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       const generated: Signal[] = [];
       let currentTime = totalStartMins + 5;
 
-      // Always generate exactly 10 signals per generation!
-      while (currentTime < totalEndMins && generated.length < MAX_DAILY_SIGNALS) {
+      // Exact Time-Gap Generation Loop from uploaded gap system:
+      // Steps through [start + 5 -> end] with random intervals (2 to 8 mins)
+      while (currentTime < totalEndMins) {
         const hours = Math.floor(currentTime / 60) % 24;
         const minutes = currentTime % 60;
         const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
         const pair = ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)];
         const direction = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
 
+        // Dynamic random gap minutes (2 to 8 minutes interval)
+        const randomMinutesToAdd = Math.floor(Math.random() * 7) + 2;
+
         generated.push({
           pair,
           time: timeString,
           direction,
+          gapMinutes: randomMinutesToAdd,
           id: Math.random()
         });
 
-        const randomMinutesToAdd = Math.floor(Math.random() * 7) + 2;
         currentTime += randomMinutesToAdd;
       }
 
-      // Fallback if window is narrow, pad to 10 signals
-      while (generated.length < MAX_DAILY_SIGNALS) {
-        const extraMins = totalStartMins + (generated.length * 4) + 2;
-        const hours = Math.floor(extraMins / 60) % 24;
-        const minutes = extraMins % 60;
-        const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        generated.push({
-          pair: ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)],
-          time: timeString,
-          direction: DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)],
-          id: Math.random()
-        });
+      // If the window was too narrow to yield at least 3 signals, create a tight fallback
+      if (generated.length < 3) {
+        let fallbackTime = totalStartMins + 3;
+        for (let i = generated.length; i < 5; i++) {
+          const hours = Math.floor(fallbackTime / 60) % 24;
+          const minutes = fallbackTime % 60;
+          const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          const pair = ASSET_PAIRS[Math.floor(Math.random() * ASSET_PAIRS.length)];
+          const direction = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)];
+          const gap = Math.floor(Math.random() * 5) + 3;
+          generated.push({
+            pair,
+            time: timeString,
+            direction,
+            gapMinutes: gap,
+            id: Math.random()
+          });
+          fallbackTime += gap;
+        }
       }
       
-      // Save 24h usage & signals
-      const newUsage = {
-        lastTimestamp: now,
-        count: MAX_DAILY_SIGNALS
-      };
-      
       try {
-        localStorage.setItem('ah_vip_24h_limit_v2', JSON.stringify(newUsage));
-        localStorage.setItem('ah_vip_today_signals_v1', JSON.stringify({
+        localStorage.setItem('ah_vip_today_signals_v2', JSON.stringify({
           date: today,
           signals: generated
         }));
@@ -313,7 +280,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
       setSignals(generated);
       setIsGenerating(false);
       setHasGenerated(true);
-    }, 1600);
+    }, 1400);
   };
 
   const toggleFavorite = (id: number) => {
@@ -353,42 +320,55 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
   return (
     <div className="flex flex-col gap-5 sm:gap-6 w-full max-w-full">
       
-      {/* Redesigned Luxury Engine Control Center */}
+      {/* Luxury Engine Control Center with Gap System */}
       <div className="bg-gradient-to-b from-[#0d1122] to-[#060814] border border-white/10 rounded-3xl p-6 sm:p-8 relative overflow-hidden backdrop-blur-3xl shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
         
-        {/* Subtle top border accent */}
-        <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#00F0FF]/25 to-transparent" />
+        {/* Top border cyber accent */}
+        <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#00F0FF]/30 to-transparent" />
         <div className="absolute -top-32 -left-32 w-64 h-64 bg-[#0066FF]/5 rounded-full blur-[90px] pointer-events-none" />
 
-        {/* Dashboard Section Title - Center Aligned & Balanced */}
+        {/* Dashboard Section Title */}
         <div className="flex flex-col items-center justify-center text-center mt-2 mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-white/[0.02] border border-white/10 flex items-center justify-center shadow-inner mb-4">
-            <Zap className="w-6 h-6 text-[#00F0FF] animate-pulse" />
+          <div className="w-12 h-12 rounded-2xl bg-white/[0.02] border border-[#00F0FF]/25 flex items-center justify-center shadow-inner mb-4 relative group">
+            <div className="absolute inset-0 bg-[#00F0FF]/15 rounded-2xl blur-md opacity-50 group-hover:opacity-100 transition-opacity" />
+            <Zap className="w-6 h-6 text-[#00F0FF] animate-pulse relative z-10" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">وحدة استخراج الإشارات الذكية</h2>
-          <p className="text-xs font-semibold text-slate-400 mt-2 max-w-md">توليد أقوى 10 صفقات تداول VIP بدقة متناهية بالاعتماد على خوارزميات AH VIP المتطورة</p>
+          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight flex items-center gap-2">
+            <span>محرك صفقات الفجوات الذكية (GAP ENGINE)</span>
+          </h2>
+          <p className="text-xs font-semibold text-slate-400 mt-2 max-w-md">
+            توليد صفقات التداول بنظام الفجوات الزمنية المحسوبة بدقة (2 إلى 8 دقائق) مع أزواج الـ OTC الاحترافية
+          </p>
           
-          {/* Status Badges & Limits Row */}
+          {/* Status Badges Row */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
-            {/* Duration Badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-cyan-500/25 bg-cyan-500/5 text-cyan-400 text-[10px] font-black tracking-wide">
-              <Timer className="w-3.5 h-3.5 animate-pulse" />
-              <span>فترة الصفقة: 1M</span>
+            {/* Gap System Badge */}
+            <div className="flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 text-[10px] font-black tracking-wide">
+              <Split className="w-3.5 h-3.5 text-purple-400" />
+              <span>نظام الفجوات: 2 - 8 دقائق</span>
             </div>
 
-            {/* Daily Signals Badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-emerald-400 text-[10px] font-black tracking-wide">
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>الإشارات اليومية: {currentCount}/{MAX_DAILY_SIGNALS} صفقات</span>
+            {/* Duration Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-cyan-500/25 bg-cyan-500/5 text-cyan-400 text-[10px] font-black tracking-wide">
+              <Timer className="w-3.5 h-3.5" />
+              <span>فترة الصفقة: 1M OTC</span>
             </div>
+
+            {/* Generated Count */}
+            {signals.length > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-emerald-400 text-[10px] font-black tracking-wide">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <span>تم استخراج: {signals.length} صفقة</span>
+              </div>
+            )}
           </div>
         </div>
         
-        {/* Inputs row - Identical, balanced, structured */}
+        {/* Time Inputs row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5 justify-start">
-              <Activity className="w-3.5 h-3.5 text-slate-500" />
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
               وقت البدء (بتوقيت مصر)
             </label>
             <div className="relative group">
@@ -396,7 +376,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 type="time"
                 value={startTime}
                 onChange={(e) => { setStartTime(e.target.value); setTimeError(''); }}
-                className="w-full h-14 bg-[#03050c]/80 border border-white/10 hover:border-[#00F0FF]/30 focus:border-[#00F0FF]/80 rounded-2xl pl-12 pr-5 text-white text-base font-mono outline-none transition-all duration-300 shadow-inner text-left"
+                className="w-full h-14 bg-[#03050c]/80 border border-white/10 hover:border-[#00F0FF]/40 focus:border-[#00F0FF] rounded-2xl pl-12 pr-5 text-white text-base font-mono outline-none transition-all duration-300 shadow-inner text-left"
                 dir="ltr"
               />
               <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400 group-hover:text-[#00F0FF] transition-colors" />
@@ -405,7 +385,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
           
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5 justify-start">
-              <Activity className="w-3.5 h-3.5 text-slate-500" />
+              <Activity className="w-3.5 h-3.5 text-purple-400" />
               وقت الانتهاء (بتوقيت مصر)
             </label>
             <div className="relative group">
@@ -413,7 +393,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 type="time"
                 value={endTime}
                 onChange={(e) => { setEndTime(e.target.value); setTimeError(''); }}
-                className="w-full h-14 bg-[#03050c]/80 border border-white/10 hover:border-[#00F0FF]/30 focus:border-[#00F0FF]/80 rounded-2xl pl-12 pr-5 text-white text-base font-mono outline-none transition-all duration-300 shadow-inner text-left"
+                className="w-full h-14 bg-[#03050c]/80 border border-white/10 hover:border-[#00F0FF]/40 focus:border-[#00F0FF] rounded-2xl pl-12 pr-5 text-white text-base font-mono outline-none transition-all duration-300 shadow-inner text-left"
                 dir="ltr"
               />
               <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400 group-hover:text-[#00F0FF] transition-colors" />
@@ -430,7 +410,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
               exit={{ opacity: 0, height: 0 }}
               className="mb-5 overflow-hidden"
             >
-              <div className="bg-rose-500/5 border border-rose-500/15 rounded-xl p-3.5 flex items-center gap-2">
+              <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3.5 flex items-center gap-2">
                 <ArrowDownRight className="w-4 h-4 text-rose-400 rotate-45 shrink-0" />
                 <span className="text-xs text-rose-300 font-bold">{timeError}</span>
               </div>
@@ -465,7 +445,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                       <Cpu className="w-4.5 h-4.5 text-[#00F0FF] animate-spin" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[8px] font-black text-slate-500 tracking-widest uppercase">AI ALGORITHMIC DISPATCH</span>
+                      <span className="text-[8px] font-black text-slate-500 tracking-widest uppercase">GAP ALGORITHM ENGINE</span>
                       <span className="text-xs font-black text-[#00F0FF] mt-0.5 tracking-wide">
                         {scanMessages[scanStep]}
                       </span>
@@ -482,7 +462,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                     initial={{ width: "0%" }}
                     animate={{ width: `${(scanStep + 1) * 25}%` }}
                     transition={{ duration: 0.35, ease: "easeInOut" }}
-                    className="h-full rounded-full bg-gradient-to-r from-[#00F0FF] to-[#0066FF] shadow-[0_0_8px_rgba(0,240,255,0.4)]"
+                    className="h-full rounded-full bg-gradient-to-r from-[#00F0FF] via-purple-500 to-[#0066FF] shadow-[0_0_8px_rgba(0,240,255,0.4)]"
                   />
                 </div>
               </motion.div>
@@ -500,12 +480,12 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 onTouchEnd={handleBtnPointerUp}
                 onMouseLeave={handleBtnPointerLeave}
                 disabled={isGenerating}
-                className="w-full h-16 relative overflow-hidden rounded-full shadow-[0_0_30px_rgba(0,240,255,0.25)] border border-[#00F0FF]/30 bg-gradient-to-r from-[#00F0FF] via-[#0066FF] to-[#8000FF] hover:brightness-110 active:brightness-95 transition-all cursor-pointer group flex items-center justify-center select-none"
+                className="w-full h-16 relative overflow-hidden rounded-full shadow-[0_0_35px_rgba(0,240,255,0.25)] border border-[#00F0FF]/30 bg-gradient-to-r from-[#00F0FF] via-[#0066FF] to-[#8000FF] hover:brightness-110 active:brightness-95 transition-all cursor-pointer group flex items-center justify-center select-none"
               >
                 {/* Micro reflection shimmer */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none" />
                 
-                {/* Dynamic Mouse/Touch Neon Flare Micro-interaction */}
+                {/* Dynamic Mouse/Touch Neon Flare */}
                 <div 
                   className="absolute rounded-full pointer-events-none blur-md transition-opacity duration-300 ease-out"
                   style={{
@@ -526,13 +506,13 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 {/* Premium typography and glowing icon */}
                 <span className="relative z-10 text-white font-black tracking-wider text-sm flex items-center gap-2.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
                   <Sparkles className="w-5 h-5 text-white animate-pulse" />
-                  <span>بدء استخراج الإشارات الفورية VIP</span>
+                  <span>استخراج صفقات الفجوات الفورية (GAP SIGNALS)</span>
                 </span>
               </motion.button>
             )}
           </AnimatePresence>
 
-          {/* Free Plan Expired Notice Banner (Triggers 1 min after last trade time) */}
+          {/* Plan Expired Notice Banner */}
           <AnimatePresence>
             {isFreePlanExpired && (
               <motion.div 
@@ -545,11 +525,11 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                 
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/35 text-purple-300 text-xs font-black shadow-inner">
                   <AlertCircle className="w-4 h-4 text-purple-400 animate-pulse" />
-                  <span>انتهت الخطة المجانية لهذا اليوم</span>
+                  <span>انتهت الصفقات المجدولة لهذه الجلسة</span>
                 </div>
 
                 <p className="text-xs text-slate-300 font-bold max-w-md leading-relaxed">
-                  تم الانتهاء من صفقات الخطة المجانية اليومية. للحصول على صفقات حية بريميوم غير محدودة، تواصل مع الدعم الفني:
+                  للحصول على صفقات حية VIP مستمرة بدون توقف، تواصل مع فريق الدعم الفني:
                 </p>
 
                 {/* Telegram Username Support Link */}
@@ -563,7 +543,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                   <span>@A_H_QUOTEX_SUPPORT</span>
                 </a>
 
-                {/* Timer in Hours ONLY */}
+                {/* Timer */}
                 <div className="flex items-center gap-2.5 mt-1 px-5 py-2 rounded-2xl bg-white/[0.03] border border-cyan-500/30 shadow-inner">
                   <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
                   <span className="text-xs font-bold text-slate-400">متبقي على التجديد:</span>
@@ -584,7 +564,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
             exit={{ opacity: 0, y: -15, transition: { duration: 0.25 } }}
             className="flex flex-col gap-4 sm:gap-5"
           >
-            {/* Minimal Luxury Control Toolbar */}
+            {/* Control Toolbar */}
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between px-2">
               
               {/* Segmented Filter Control */}
@@ -593,27 +573,27 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                   onClick={() => setFilterDirection('ALL')}
                   className={`flex-1 md:flex-initial h-9 px-5 rounded-xl text-xs font-black transition-all cursor-pointer ${filterDirection === 'ALL' ? 'bg-white/10 text-white shadow-inner' : 'text-slate-500 hover:text-white'}`}
                 >
-                  الكل
+                  الكل ({signals.length})
                 </button>
                 <button 
                   onClick={() => setFilterDirection('CALL')}
                   className={`flex-1 md:flex-initial h-9 px-5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${filterDirection === 'CALL' ? 'bg-[#00F0FF]/10 text-[#00F0FF]' : 'text-slate-500 hover:text-white'}`}
                 >
                   <ArrowUpRight className="w-3.5 h-3.5" />
-                  CALL
+                  CALL 🟢
                 </button>
                 <button 
                   onClick={() => setFilterDirection('PUT')}
                   className={`flex-1 md:flex-initial h-9 px-5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${filterDirection === 'PUT' ? 'bg-rose-500/10 text-rose-400' : 'text-slate-500 hover:text-white'}`}
                 >
                   <ArrowDownRight className="w-3.5 h-3.5" />
-                  PUT
+                  PUT 🔴
                 </button>
               </div>
               
               {/* Search and Action commands */}
               <div className="flex items-center gap-3 w-full md:w-auto">
-                {/* Modern Command Search bar */}
+                {/* Search bar */}
                 <div className="relative flex-1 md:w-56">
                   <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
@@ -632,24 +612,34 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                   whileTap={{ scale: 0.95 }}
                   onClick={handleCopyAll}
                   disabled={filteredSignals.length === 0}
-                  className="w-11 h-11 rounded-2xl bg-[#0d1122]/90 hover:bg-[#00F0FF]/10 text-slate-400 hover:text-[#00F0FF] border border-white/10 hover:border-[#00F0FF]/30 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                  className="h-11 px-4 rounded-2xl bg-[#0d1122]/90 hover:bg-[#00F0FF]/15 text-slate-300 hover:text-[#00F0FF] border border-white/10 hover:border-[#00F0FF]/40 transition-all flex items-center gap-2 shrink-0 cursor-pointer text-xs font-black"
                   title="نسخ جميع الإشارات المعروضة"
                 >
-                  {copiedAll ? <Check className="w-4.5 h-4.5 text-[#00F0FF]" /> : <Copy className="w-4.5 h-4.5" />}
+                  {copiedAll ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#00F0FF]" />
+                      <span className="text-[#00F0FF]">تم النسخ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>نسخ الصفقات</span>
+                    </>
+                  )}
                 </motion.button>
               </div>
             </div>
 
-            {/* Micro details counter */}
+            {/* Details counter */}
             <div className="px-2 flex items-center justify-between text-[10px] font-bold text-slate-500">
               <span className="flex items-center gap-1">
                 <SlidersHorizontal className="w-3 h-3 text-slate-600" />
-                <span>نتائج التصفية: {filteredSignals.length} إشارة تداول جاهزة</span>
+                <span>إجمالي الصفقات: {filteredSignals.length} صفقة فجوات جاهزة</span>
               </span>
-              <span>انقر فوق النجمة لتثبيت الإشارة في الأعلى</span>
+              <span>الصيغة: HH:MM - PAIR DIRECTION</span>
             </div>
 
-            {/* Redesigned Luxury Signals List */}
+            {/* Luxury Signals List with Gap Badges */}
             <div className="flex flex-col gap-3 min-h-[100px] relative">
               <AnimatePresence mode="popLayout">
                 {sortedSignals.length === 0 ? (
@@ -661,7 +651,7 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                     transition={{ duration: 0.25 }}
                     className="py-16 text-center text-slate-500 bg-white/[0.01] border border-white/5 rounded-3xl font-mono text-xs uppercase tracking-widest"
                   >
-                    No signals found matching search criteria
+                    لا توجد إشارات مطابقة لمعايير البحث
                   </motion.div>
                 ) : (
                   sortedSignals.map((signal, idx) => {
@@ -687,12 +677,12 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                             : 'bg-white/[0.02] hover:bg-white/[0.04] border-white/10 hover:border-[#00F0FF]/35 shadow-sm'
                         }`}
                       >
-                        {/* Left glow overlay on active hover */}
+                        {/* Left glow overlay */}
                         <div className={`absolute top-0 bottom-0 left-0 w-1 transition-all duration-300 opacity-50 group-hover:opacity-100 ${
                           isCall ? 'bg-[#00F0FF]' : 'bg-rose-500'
                         }`} />
 
-                        <div className="flex items-center gap-4 sm:gap-6">
+                        <div className="flex items-center gap-3 sm:gap-6">
                           {/* Favorite Star action */}
                           <motion.button
                             whileHover={{ scale: 1.2 }}
@@ -707,30 +697,40 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                             <Star className="w-4 h-4" fill={isFav ? "currentColor" : "none"} />
                           </motion.button>
 
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-6">
-                            {/* Asset Name with spaced look */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
+                            {/* Asset Name */}
                             <span className="font-mono text-sm sm:text-base font-black text-white tracking-wider" dir="ltr">
                               {signal.pair}
                             </span>
                             
                             <div className="h-4.5 w-px bg-white/10 hidden sm:block" />
                             
-                            {/* Time Stamp badge */}
-                            <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200 font-bold bg-[#00F0FF]/10 px-2.5 py-1 rounded-lg border border-[#00F0FF]/25 shadow-inner">
-                              <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
-                              <span className="text-white font-mono">{signal.time}</span>
+                            <div className="flex items-center gap-2">
+                              {/* Time Stamp badge */}
+                              <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200 font-bold bg-[#00F0FF]/10 px-2.5 py-1 rounded-lg border border-[#00F0FF]/25 shadow-inner">
+                                <Clock className="w-3.5 h-3.5 text-[#00F0FF]" />
+                                <span className="text-white font-mono">{signal.time}</span>
+                              </div>
+
+                              {/* Gap interval indicator */}
+                              {signal.gapMinutes && (
+                                <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
+                                  <Split className="w-3 h-3 text-purple-400" />
+                                  <span>فجوة +{signal.gapMinutes}د</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
 
                         {/* Right directions and actions */}
-                        <div className="flex items-center gap-3 sm:gap-5">
+                        <div className="flex items-center gap-2.5 sm:gap-4">
                           
-                          {/* Call/Put Direction badging with vector icons */}
-                          <div className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black tracking-wider ${
+                          {/* Call/Put Direction badge */}
+                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black tracking-wider ${
                             isCall 
-                              ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/10' 
-                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/10'
+                              ? 'bg-[#00F0FF]/10 text-[#00F0FF] border border-[#00F0FF]/20' 
+                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                           }`}>
                             {isCall ? (
                               <>
@@ -750,11 +750,12 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => handleCopySingle(signal, idx)}
-                            className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-all ${
+                            className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center transition-all ${
                               isCopied 
                                 ? 'bg-[#00F0FF]/15 text-[#00F0FF] border border-[#00F0FF]/30 shadow-[0_0_15px_rgba(0,240,255,0.15)]' 
                                 : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-transparent'
                             }`}
+                            title="نسخ هذه الصفقة"
                           >
                             {isCopied ? <Check className="w-4 h-4 text-[#00F0FF]" /> : <Copy className="w-4 h-4" />}
                           </motion.button>
@@ -771,4 +772,3 @@ export default function SignalGenerator({ lang }: { lang: 'ar' | 'en' }) {
     </div>
   );
 }
-

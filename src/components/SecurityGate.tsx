@@ -16,18 +16,24 @@ import {
   AlertTriangle,
   Radio,
   Cpu,
-  LogOut
+  LogOut,
+  XCircle,
+  Zap,
+  Activity,
+  Check
 } from 'lucide-react';
 
-// New secure high-entropy VIP random key
-const REQUIRED_PASSWORD = "AH_VIP_9843_Q8X";
-const AUTH_STORAGE_KEY = "ah_vip_auth_pass_v3_secure";
+// New high-entropy quantum-grade VIP random password
+const REQUIRED_PASSWORD = "AH_VIP_7194_X5K";
+const AUTH_STORAGE_KEY = "ah_vip_auth_pass_v4_ultra_quantum";
 const LEGACY_STORAGE_KEYS = [
-  'ah_vip_auth_pass_v1',
+  'ah_vip_auth_pass_v3_secure',
   'ah_vip_auth_pass_v2',
+  'ah_vip_auth_pass_v1',
   'ah_vip_auth_pass',
   'ah_vip_session',
-  'ah_vip_token'
+  'ah_vip_token',
+  'ah_vip_key'
 ];
 
 const SUPPORT_URL = "https://t.me/A_H_QUOTEX_SUPPORT";
@@ -38,10 +44,10 @@ interface SecurityGateProps {
 }
 
 export default function SecurityGate({ children }: SecurityGateProps) {
-  // Purge any legacy session tokens immediately
+  // Purge any legacy session tokens immediately and verify active validity
   const checkStoredAuth = useCallback((): boolean => {
     try {
-      // Clear all legacy keys immediately to kick out older sessions
+      // Clear all legacy keys immediately across localStorage & sessionStorage
       LEGACY_STORAGE_KEYS.forEach(key => {
         if (localStorage.getItem(key)) localStorage.removeItem(key);
         if (sessionStorage.getItem(key)) sessionStorage.removeItem(key);
@@ -61,13 +67,14 @@ export default function SecurityGate({ children }: SecurityGateProps) {
   const [shake, setShake] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [unlockedSuccess, setUnlockedSuccess] = useState(false);
+  const [justPasted, setJustPasted] = useState(false);
 
   // Brute force protection
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutTimer, setLockoutTimer] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Multi-tier active session enforcement
+  // Multi-tier active session enforcement across all tabs and background returns
   useEffect(() => {
     const enforceRevocation = () => {
       const isValid = checkStoredAuth();
@@ -77,13 +84,26 @@ export default function SecurityGate({ children }: SecurityGateProps) {
       }
     };
 
-    // 1. Run immediately
+    // 1. Run immediately on mount
     enforceRevocation();
 
     // 2. Real-time storage event (cross-tab kick out)
     window.addEventListener('storage', enforceRevocation);
 
-    // 3. Tab visibility change (when returning to phone browser or tab)
+    // 3. BroadcastChannel cross-tab instant revocation if supported
+    let broadcastChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        broadcastChannel = new BroadcastChannel('ah_vip_security_sync');
+        broadcastChannel.onmessage = (event) => {
+          if (event.data === 'REVOKE_ALL' || event.data === 'SESSION_CHANGED') {
+            enforceRevocation();
+          }
+        };
+      }
+    } catch (e) {}
+
+    // 4. Tab visibility & focus change (when user returns to browser on phone/laptop)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         enforceRevocation();
@@ -92,13 +112,16 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', enforceRevocation);
 
-    // 4. Fast polling interval for zero-delay revocation
-    const intervalId = setInterval(enforceRevocation, 300);
+    // 5. Fast zero-delay polling interval
+    const intervalId = setInterval(enforceRevocation, 250);
 
     return () => {
       window.removeEventListener('storage', enforceRevocation);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', enforceRevocation);
+      if (broadcastChannel) {
+        broadcastChannel.close();
+      }
       clearInterval(intervalId);
     };
   }, [checkStoredAuth]);
@@ -139,13 +162,19 @@ export default function SecurityGate({ children }: SecurityGateProps) {
       if (cleanPass === REQUIRED_PASSWORD) {
         try {
           localStorage.setItem(AUTH_STORAGE_KEY, REQUIRED_PASSWORD);
+          // Broadcast to other tabs
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('ah_vip_security_sync');
+            bc.postMessage('SESSION_CHANGED');
+            bc.close();
+          }
         } catch (e) {}
         setUnlockedSuccess(true);
         setFailedAttempts(0);
         setTimeout(() => {
           setIsUnlocked(true);
           setIsSubmitting(false);
-        }, 750);
+        }, 700);
       } else {
         setIsSubmitting(false);
         const newFailed = failedAttempts + 1;
@@ -155,7 +184,7 @@ export default function SecurityGate({ children }: SecurityGateProps) {
           setLockoutTimer(30);
           setErrorMsg('تم حظر المحاولات مؤقتاً لمدة 30 ثانية لدواعي الأمان المشدد.');
         } else {
-          setErrorMsg(`كلمة المرور غير صحيحة! تأكد من تطابق الأحرف والرموز (متبقي ${5 - newFailed} محاولات).`);
+          setErrorMsg(`رمز المرور غير صحيح! يرجى التحقق من الأحرف والرموز (متبقي ${5 - newFailed} محاولات).`);
         }
         triggerShake();
       }
@@ -168,6 +197,8 @@ export default function SecurityGate({ children }: SecurityGateProps) {
         const text = await navigator.clipboard.readText();
         if (text) {
           setPassword(text.trim());
+          setJustPasted(true);
+          setTimeout(() => setJustPasted(false), 1500);
           if (inputRef.current) inputRef.current.focus();
         }
       }
@@ -178,6 +209,11 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('ah_vip_security_sync');
+        bc.postMessage('REVOKE_ALL');
+        bc.close();
+      }
     } catch (e) {}
     setIsUnlocked(false);
     setPassword('');
@@ -187,7 +223,7 @@ export default function SecurityGate({ children }: SecurityGateProps) {
   if (isUnlocked) {
     return (
       <div className="relative w-full">
-        {/* Floating Quick Lock Button */}
+        {/* Floating Quick Session Lock Button */}
         <div className="fixed bottom-4 left-4 z-50">
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -208,56 +244,59 @@ export default function SecurityGate({ children }: SecurityGateProps) {
   return (
     <div className="min-h-screen bg-[#03050e] text-slate-100 font-sans flex items-center justify-center p-3.5 sm:p-6 relative overflow-hidden selection:bg-cyan-500/30 selection:text-cyan-200" dir="rtl">
       
-      {/* 100K High-Tech Cyber Grid & Neon Flare Background */}
+      {/* Dynamic Cybernetic Canvas Background */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
         {/* High Precision Dynamic Matrix Grid */}
         <div 
-          className="absolute inset-0 opacity-[0.035]"
+          className="absolute inset-0 opacity-[0.04]"
           style={{
             backgroundImage: 'linear-gradient(to right, #00F0FF 1px, transparent 1px), linear-gradient(to bottom, #8B5CF6 1px, transparent 1px)',
-            backgroundSize: '32px 32px',
-            maskImage: 'radial-gradient(ellipse at 50% 50%, black 20%, transparent 80%)',
-            WebkitMaskImage: 'radial-gradient(ellipse at 50% 50%, black 20%, transparent 80%)'
+            backgroundSize: '28px 28px',
+            maskImage: 'radial-gradient(ellipse at 50% 50%, black 25%, transparent 80%)',
+            WebkitMaskImage: 'radial-gradient(ellipse at 50% 50%, black 25%, transparent 80%)'
           }} 
         />
-        {/* Pulsing Core Ambient Glows */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full bg-gradient-to-tr from-purple-700/20 via-cyan-500/10 to-transparent blur-[140px] animate-pulse" />
-        <div className="absolute top-[15%] left-[20%] w-72 h-72 rounded-full bg-cyan-500/10 blur-[100px]" />
-        <div className="absolute bottom-[15%] right-[20%] w-72 h-72 rounded-full bg-purple-600/15 blur-[110px]" />
         
-        {/* Animated Cyber Ring Coordinates */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[580px] h-[580px] rounded-full border border-purple-500/10 animate-[spin_32s_linear_infinite]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-[420px] rounded-full border border-dashed border-cyan-400/10 animate-[spin_24s_linear_infinite_reverse]" />
+        {/* Pulsing Core Ambient Glows */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[580px] h-[580px] rounded-full bg-gradient-to-tr from-purple-700/25 via-cyan-500/15 to-transparent blur-[140px] animate-pulse" />
+        <div className="absolute top-[12%] left-[18%] w-80 h-80 rounded-full bg-cyan-500/10 blur-[110px]" />
+        <div className="absolute bottom-[12%] right-[18%] w-80 h-80 rounded-full bg-purple-600/15 blur-[120px]" />
+        
+        {/* Cyber Orbital Lasers */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] h-[620px] rounded-full border border-purple-500/15 animate-[spin_40s_linear_infinite]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[460px] h-[460px] rounded-full border border-dashed border-cyan-400/15 animate-[spin_25s_linear_infinite_reverse]" />
       </div>
 
       {/* Main VIP Security Terminal Card */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.93, y: 25 }}
+        initial={{ opacity: 0, scale: 0.92, y: 25 }}
         animate={shake ? { x: [-12, 12, -8, 8, -4, 4, 0] } : { opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md bg-gradient-to-b from-[#0c1029]/95 via-[#070a1e]/95 to-[#030510]/98 border border-purple-500/35 hover:border-cyan-500/40 rounded-3xl p-6 sm:p-8 relative z-10 backdrop-blur-3xl shadow-[0_20px_80px_rgba(139,92,246,0.25)] flex flex-col items-center transition-colors"
+        className="w-full max-w-md bg-gradient-to-b from-[#0c102a]/95 via-[#07091d]/95 to-[#03040f]/98 border border-purple-500/40 hover:border-cyan-500/50 rounded-3xl p-6 sm:p-8 relative z-10 backdrop-blur-3xl shadow-[0_25px_90px_rgba(139,92,246,0.3)] flex flex-col items-center transition-all"
       >
         {/* Top Multi-Color Laser Trim */}
-        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#00F0FF] via-purple-500 to-transparent opacity-90 rounded-t-3xl" />
+        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#00F0FF] via-purple-500 to-transparent opacity-95 rounded-t-3xl" />
         
-        {/* Corner Neon Accents */}
-        <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-cyan-400 rounded-tr-lg" />
-        <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-purple-400 rounded-tl-lg" />
+        {/* Corner Neon Cyber Accents */}
+        <div className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-cyan-400 rounded-tr-lg" />
+        <div className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-purple-400 rounded-tl-lg" />
+        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-purple-400 rounded-br-lg" />
+        <div className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-400 rounded-bl-lg" />
 
         {/* Live Security Protocol Badge */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-black mb-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-black mb-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
           </span>
-          <span className="tracking-wide">بوابة الحماية المشفرة • AH VIP TERMINAL</span>
+          <span className="tracking-wide">نظام الحماية المشفرة • AH VIP TERMINAL</span>
         </div>
 
-        {/* Central Futuristic Hologram Lock Icon */}
+        {/* Central Futuristic Hologram Lock / Fingerprint Icon */}
         <div className="relative mb-5">
           <div className="relative group">
-            <div className="absolute -inset-1.5 bg-gradient-to-r from-cyan-500 via-purple-600 to-cyan-400 rounded-3xl blur-xl opacity-60 group-hover:opacity-90 transition-opacity animate-pulse" />
-            <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-3xl bg-[#060817] border-2 border-cyan-500/40 flex items-center justify-center relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,240,255,0.2)]">
+            <div className="absolute -inset-2 bg-gradient-to-r from-cyan-500 via-purple-600 to-cyan-400 rounded-3xl blur-xl opacity-65 group-hover:opacity-95 transition-opacity animate-pulse" />
+            <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-3xl bg-[#060817] border-2 border-cyan-500/40 flex items-center justify-center relative overflow-hidden shadow-[inset_0_0_25px_rgba(0,240,255,0.25)]">
               {unlockedSuccess ? (
                 <motion.div
                   initial={{ scale: 0.5, rotate: -45 }}
@@ -268,7 +307,7 @@ export default function SecurityGate({ children }: SecurityGateProps) {
                 </motion.div>
               ) : (
                 <div className="relative flex items-center justify-center">
-                  <Fingerprint className="w-11 h-11 text-cyan-400 animate-pulse drop-shadow-[0_0_10px_rgba(0,240,255,0.6)]" />
+                  <Fingerprint className="w-11 h-11 text-cyan-400 animate-pulse drop-shadow-[0_0_12px_rgba(0,240,255,0.7)]" />
                   <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-purple-600/90 border border-purple-300/40 flex items-center justify-center shadow-lg">
                     <Lock className="w-2.5 h-2.5 text-white" />
                   </div>
@@ -280,13 +319,13 @@ export default function SecurityGate({ children }: SecurityGateProps) {
 
         {/* Dynamic Title & Subtitle */}
         <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-2 flex items-center gap-2">
-          <span>{unlockedSuccess ? 'تم التحقق بنجاح!' : 'تسجيل الدخول المشفر'}</span>
+          <span>{unlockedSuccess ? 'تم التحقق بنجاح!' : 'بوابة تسجيل الدخول VIP'}</span>
           {!unlockedSuccess && <Cpu className="w-5 h-5 text-cyan-400" />}
         </h2>
         
         <p className="text-xs sm:text-sm text-slate-300 font-bold leading-relaxed mb-6 max-w-sm text-center">
           {unlockedSuccess 
-            ? 'جاري فك التشفير وتوجيهك إلى محرك الإشارات الفورية VIP...' 
+            ? 'جاري فك التشفير وتوجيهك إلى محرك الإشارات الفورية وصفقات الفجوات...' 
             : 'أدخل رمز المرور السري الخاص بالبوت للوصول لصفقات وخوارزميات اليوم.'}
         </p>
 
@@ -311,11 +350,24 @@ export default function SecurityGate({ children }: SecurityGateProps) {
               <button
                 type="button"
                 onClick={handlePaste}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-300 hover:text-cyan-300 transition-colors cursor-pointer bg-white/[0.04] px-2 py-0.5 rounded-lg border border-purple-500/20"
+                className={`inline-flex items-center gap-1 text-[11px] font-bold transition-all cursor-pointer px-2.5 py-0.5 rounded-lg border ${
+                  justPasted 
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                    : 'bg-white/[0.04] text-purple-300 hover:text-cyan-300 border-purple-500/20 hover:border-cyan-400/40'
+                }`}
                 title="لصق من الحافظة"
               >
-                <ClipboardPaste className="w-3 h-3 text-purple-400" />
-                <span>لصق الكود</span>
+                {justPasted ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>تم اللصق!</span>
+                  </>
+                ) : (
+                  <>
+                    <ClipboardPaste className="w-3 h-3 text-purple-400" />
+                    <span>لصق الكود</span>
+                  </>
+                )}
               </button>
             </div>
             
@@ -328,17 +380,29 @@ export default function SecurityGate({ children }: SecurityGateProps) {
                 placeholder="أدخل الرمز السري هنا..."
                 disabled={isSubmitting || unlockedSuccess || lockoutTimer > 0}
                 autoFocus
-                className="w-full h-13 px-4 pl-12 bg-white/[0.04] border border-cyan-500/30 focus:border-cyan-400 focus:bg-white/[0.07] rounded-2xl text-white font-mono text-sm font-black tracking-widest placeholder:text-slate-500 placeholder:font-sans placeholder:tracking-normal outline-none transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] text-left dir-ltr disabled:opacity-50"
+                className="w-full h-13 px-4 pl-20 bg-white/[0.04] border border-cyan-500/30 focus:border-cyan-400 focus:bg-white/[0.07] rounded-2xl text-white font-mono text-sm font-black tracking-widest placeholder:text-slate-500 placeholder:font-sans placeholder:tracking-normal outline-none transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] text-left dir-ltr disabled:opacity-50"
               />
               
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-400 transition-colors p-1"
-                title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {password && (
+                  <button
+                    type="button"
+                    onClick={() => setPassword('')}
+                    className="text-slate-500 hover:text-rose-400 transition-colors p-1"
+                    title="مسح"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-slate-400 hover:text-cyan-400 transition-colors p-1"
+                  title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -384,8 +448,24 @@ export default function SecurityGate({ children }: SecurityGateProps) {
           </motion.button>
         </form>
 
+        {/* Security Feature Badges */}
+        <div className="grid grid-cols-3 gap-2 w-full mt-5 text-[10px] font-mono text-slate-400">
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-white/[0.02] border border-white/5">
+            <span className="text-cyan-400 font-bold">AES-256</span>
+            <span className="text-[9px] text-slate-500">تشفير متقدم</span>
+          </div>
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-white/[0.02] border border-white/5">
+            <span className="text-purple-400 font-bold">OTC-GEN</span>
+            <span className="text-[9px] text-slate-500">صفقات الفجوات</span>
+          </div>
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-white/[0.02] border border-white/5">
+            <span className="text-emerald-400 font-bold">LIVE-SYNC</span>
+            <span className="text-[9px] text-slate-500">تحديث فوري</span>
+          </div>
+        </div>
+
         {/* Clean Divider */}
-        <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent my-5 sm:my-6" />
+        <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent my-5" />
 
         {/* Technical Support VIP Contact Button */}
         <div className="w-full flex flex-col items-center gap-2.5">
@@ -409,4 +489,3 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     </div>
   );
 }
-
