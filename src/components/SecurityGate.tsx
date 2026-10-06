@@ -23,21 +23,29 @@ import {
   Check
 } from 'lucide-react';
 
-// New high-entropy quantum-grade VIP random password
-const REQUIRED_PASSWORD = "AH_VIP_7194_X5K";
-const AUTH_STORAGE_KEY = "ah_vip_auth_pass_v4_ultra_quantum";
+// New high-entropy quantum-grade VIP random password (Q8 Identity)
+const REQUIRED_PASSWORD = "Q8_VIP_8492_Z3K";
+const AUTH_STORAGE_KEY = "q8_vip_auth_pass_v5_quantum_final";
 const LEGACY_STORAGE_KEYS = [
+  'ah_vip_auth_pass_v4_ultra_quantum',
   'ah_vip_auth_pass_v3_secure',
   'ah_vip_auth_pass_v2',
   'ah_vip_auth_pass_v1',
   'ah_vip_auth_pass',
   'ah_vip_session',
   'ah_vip_token',
-  'ah_vip_key'
+  'ah_vip_key',
+  'ah_vip_locked_date',
+  'ah_vip_today_signals_v2'
 ];
 
-const SUPPORT_URL = "https://t.me/A_H_QUOTEX_SUPPORT";
-const SUPPORT_HANDLE = "@A_H_QUOTEX_SUPPORT";
+const SUPPORT_URL = "https://t.me/Qv_Dev";
+
+const TelegramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+  </svg>
+);
 
 interface SecurityGateProps {
   children: React.ReactNode;
@@ -91,14 +99,22 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     window.addEventListener('storage', enforceRevocation);
 
     // 3. BroadcastChannel cross-tab instant revocation if supported
-    let broadcastChannel: BroadcastChannel | null = null;
+    let broadcastChannelQ8: BroadcastChannel | null = null;
+    let broadcastChannelOld: BroadcastChannel | null = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
-        broadcastChannel = new BroadcastChannel('ah_vip_security_sync');
-        broadcastChannel.onmessage = (event) => {
+        broadcastChannelQ8 = new BroadcastChannel('q8_vip_security_sync');
+        broadcastChannelQ8.onmessage = (event) => {
           if (event.data === 'REVOKE_ALL' || event.data === 'SESSION_CHANGED') {
             enforceRevocation();
           }
+        };
+
+        // Also force-revoke any listeners on old channel
+        broadcastChannelOld = new BroadcastChannel('ah_vip_security_sync');
+        broadcastChannelOld.postMessage('REVOKE_ALL');
+        broadcastChannelOld.onmessage = () => {
+          enforceRevocation();
         };
       }
     } catch (e) {}
@@ -112,15 +128,18 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', enforceRevocation);
 
-    // 5. Fast zero-delay polling interval
+    // 5. Fast zero-delay polling interval (250ms) to boot any lingering sessions
     const intervalId = setInterval(enforceRevocation, 250);
 
     return () => {
       window.removeEventListener('storage', enforceRevocation);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', enforceRevocation);
-      if (broadcastChannel) {
-        broadcastChannel.close();
+      if (broadcastChannelQ8) {
+        broadcastChannelQ8.close();
+      }
+      if (broadcastChannelOld) {
+        broadcastChannelOld.close();
       }
       clearInterval(intervalId);
     };
@@ -164,7 +183,7 @@ export default function SecurityGate({ children }: SecurityGateProps) {
           localStorage.setItem(AUTH_STORAGE_KEY, REQUIRED_PASSWORD);
           // Broadcast to other tabs
           if (typeof BroadcastChannel !== 'undefined') {
-            const bc = new BroadcastChannel('ah_vip_security_sync');
+            const bc = new BroadcastChannel('q8_vip_security_sync');
             bc.postMessage('SESSION_CHANGED');
             bc.close();
           }
@@ -210,9 +229,13 @@ export default function SecurityGate({ children }: SecurityGateProps) {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
       if (typeof BroadcastChannel !== 'undefined') {
-        const bc = new BroadcastChannel('ah_vip_security_sync');
+        const bc = new BroadcastChannel('q8_vip_security_sync');
         bc.postMessage('REVOKE_ALL');
         bc.close();
+
+        const bcOld = new BroadcastChannel('ah_vip_security_sync');
+        bcOld.postMessage('REVOKE_ALL');
+        bcOld.close();
       }
     } catch (e) {}
     setIsUnlocked(false);
@@ -289,7 +312,7 @@ export default function SecurityGate({ children }: SecurityGateProps) {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
           </span>
-          <span className="tracking-wide">نظام الحماية المشفرة • AH VIP TERMINAL</span>
+          <span className="tracking-wide">نظام الحماية المشفرة • Q8 VIP TERMINAL</span>
         </div>
 
         {/* Central Futuristic Hologram Lock / Fingerprint Icon */}
@@ -478,10 +501,10 @@ export default function SecurityGate({ children }: SecurityGateProps) {
             href={SUPPORT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-purple-500/20 border border-purple-500/30 hover:border-cyan-400/60 text-purple-200 hover:text-white text-xs font-black transition-all group shadow-md shadow-purple-950/20"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-white/[0.04] hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400/60 text-sky-200 hover:text-white text-xs font-black transition-all group shadow-md shadow-sky-950/20"
           >
-            <MessageCircle className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-            <span>تواصل بالدعم الفني المباشر ({SUPPORT_HANDLE})</span>
+            <TelegramIcon className="w-3.5 h-3.5 text-sky-400 shrink-0 group-hover:scale-110 transition-transform" />
+            <span>المنشئ والمطور (@Qv_Dev)</span>
           </a>
         </div>
 

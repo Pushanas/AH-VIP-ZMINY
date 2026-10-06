@@ -185,7 +185,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <ShieldAlert className="w-6 h-6 text-[#FF2F92]" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white">لوحة الإدارة - AH VIP</h1>
+            <h1 className="text-xl font-black text-white">لوحة الإدارة - Q8 VIP</h1>
             <p className="text-xs text-gray-400">إدارة الاشتراكات والأكواد</p>
           </div>
         </div>
