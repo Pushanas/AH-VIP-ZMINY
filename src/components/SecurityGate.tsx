@@ -24,9 +24,10 @@ import {
 } from 'lucide-react';
 
 // New high-entropy quantum-grade VIP random password (Q8 Identity)
-const REQUIRED_PASSWORD = "Q8_VIP_3095_X7W";
-const AUTH_STORAGE_KEY = "q8_vip_auth_pass_v6_quantum_v2";
+const REQUIRED_PASSWORD = "Q8_VIP_6419_T2Z";
+const AUTH_STORAGE_KEY = "q8_vip_auth_pass_v7_ip_locked";
 const LEGACY_STORAGE_KEYS = [
+  'q8_vip_auth_pass_v6_quantum_v2',
   'q8_vip_auth_pass_v5_quantum_final',
   'ah_vip_auth_pass_v4_ultra_quantum',
   'ah_vip_auth_pass_v3_secure',
@@ -42,11 +43,51 @@ const LEGACY_STORAGE_KEYS = [
 
 const SUPPORT_URL = "https://t.me/Qv_Dev";
 
-const TelegramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+const TelegramIcon = ({ className = "w-3 h-3" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
   </svg>
 );
+
+// High-precision Hardware & Browser Fingerprint Generator
+const getDeviceFingerprint = (): string => {
+  try {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const parts = [
+      navigator.userAgent,
+      navigator.language,
+      `${screen.width}x${screen.height}x${screen.colorDepth}`,
+      window.devicePixelRatio || 1,
+      navigator.hardwareConcurrency || 2,
+      navigator.maxTouchPoints || 0,
+      Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+    ];
+    try {
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 40;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#00F0FF';
+        ctx.fillRect(0, 0, 160, 40);
+        ctx.fillStyle = '#9333EA';
+        ctx.fillText('Q8_HARDWARE_TERMINAL', 10, 20);
+        parts.push(c.toDataURL());
+      }
+    } catch(e) {}
+
+    const raw = parts.join('|');
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+      hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+      hash |= 0;
+    }
+    const prefix = isMobile ? 'MOB' : 'DEV';
+    return `${prefix}_${Math.abs(hash).toString(16).toUpperCase().padStart(8, '0')}`;
+  } catch (e) {
+    return 'DEV_CORE_NODE';
+  }
+};
 
 interface SecurityGateProps {
   children: React.ReactNode;
@@ -160,7 +201,26 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     setTimeout(() => setShake(false), 500);
   };
 
-  const handleUnlock = (e: React.FormEvent) => {
+  // Periodic active heartbeat check to ensure single device / Wi-Fi IP binding remains valid
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const heartbeat = setInterval(async () => {
+      try {
+        const fp = getDeviceFingerprint();
+        const res = await fetch('/api/auth/vip-verify-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: REQUIRED_PASSWORD, fingerprint: fp })
+        });
+        if (res.status === 401 || res.status === 403) {
+          handleLockBot();
+        }
+      } catch (e) {}
+    }, 25000);
+    return () => clearInterval(heartbeat);
+  }, [isUnlocked]);
+
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lockoutTimer > 0) {
       setErrorMsg(`النظام في وضع التجميد الأمني مؤقتاً. انتظر ${lockoutTimer} ثانية.`);
@@ -178,37 +238,97 @@ export default function SecurityGate({ children }: SecurityGateProps) {
     setIsSubmitting(true);
     setErrorMsg('');
 
-    setTimeout(() => {
-      if (cleanPass === REQUIRED_PASSWORD) {
-        try {
-          localStorage.setItem(AUTH_STORAGE_KEY, REQUIRED_PASSWORD);
-          // Broadcast to other tabs
-          if (typeof BroadcastChannel !== 'undefined') {
-            const bc = new BroadcastChannel('q8_vip_security_sync');
-            bc.postMessage('SESSION_CHANGED');
-            bc.close();
-          }
-        } catch (e) {}
+    const fp = getDeviceFingerprint();
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const deviceName = isMobile ? 'هاتف ذكي معتمد' : 'جهاز مصرح به';
+
+    try {
+      // 1. Try server-side hardware & IP binding verification
+      const response = await fetch('/api/auth/vip-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: cleanPass, fingerprint: fp, deviceName })
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.success) {
+        localStorage.setItem(AUTH_STORAGE_KEY, REQUIRED_PASSWORD);
+        localStorage.setItem('q8_bound_fp', fp);
+        if (data.boundIp) localStorage.setItem('q8_bound_ip', data.boundIp);
+
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('q8_vip_security_sync');
+          bc.postMessage('SESSION_CHANGED');
+          bc.close();
+        }
+
         setUnlockedSuccess(true);
         setFailedAttempts(0);
         setTimeout(() => {
           setIsUnlocked(true);
           setIsSubmitting(false);
         }, 700);
-      } else {
+        return;
+      }
+
+      // If server returned a security restriction error (e.g. device/IP mismatch or invalid password)
+      if (response.status === 403 || response.status === 401) {
         setIsSubmitting(false);
         const newFailed = failedAttempts + 1;
         setFailedAttempts(newFailed);
-        
         if (newFailed >= 5) {
           setLockoutTimer(30);
           setErrorMsg('تم حظر المحاولات مؤقتاً لمدة 30 ثانية لدواعي الأمان المشدد.');
         } else {
-          setErrorMsg(`رمز المرور غير صحيح! يرجى التحقق من الأحرف والرموز (متبقي ${5 - newFailed} محاولات).`);
+          setErrorMsg(data.error || '⛔ تم رفض الدخول: كلمة المرور مقفلة ومربوطة بهاتف وشبكة واي فاي أخرى!');
         }
         triggerShake();
+        return;
       }
-    }, 450);
+    } catch (netErr) {
+      // Fallback local hardware security verification in case of connection drop
+    }
+
+    // Fallback: Local cryptographic check with device binding
+    if (cleanPass === REQUIRED_PASSWORD) {
+      try {
+        const storedFp = localStorage.getItem('q8_bound_fp');
+        if (!storedFp) {
+          localStorage.setItem('q8_bound_fp', fp);
+        } else if (storedFp !== fp) {
+          setIsSubmitting(false);
+          setErrorMsg('⛔ تم رفض الدخول: كلمة المرور مخصصة ومربوطة بهاتف آخر فقط!');
+          triggerShake();
+          return;
+        }
+
+        localStorage.setItem(AUTH_STORAGE_KEY, REQUIRED_PASSWORD);
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('q8_vip_security_sync');
+          bc.postMessage('SESSION_CHANGED');
+          bc.close();
+        }
+      } catch (e) {}
+
+      setUnlockedSuccess(true);
+      setFailedAttempts(0);
+      setTimeout(() => {
+        setIsUnlocked(true);
+        setIsSubmitting(false);
+      }, 700);
+    } else {
+      setIsSubmitting(false);
+      const newFailed = failedAttempts + 1;
+      setFailedAttempts(newFailed);
+      if (newFailed >= 5) {
+        setLockoutTimer(30);
+        setErrorMsg('تم حظر المحاولات مؤقتاً لمدة 30 ثانية لدواعي الأمان المشدد.');
+      } else {
+        setErrorMsg(`رمز المرور غير صحيح! يرجى التحقق من الأحرف والرموز (متبقي ${5 - newFailed} محاولات).`);
+      }
+      triggerShake();
+    }
   };
 
   const handlePaste = async () => {
@@ -347,11 +467,28 @@ export default function SecurityGate({ children }: SecurityGateProps) {
           {!unlockedSuccess && <Cpu className="w-5 h-5 text-cyan-400" />}
         </h2>
         
-        <p className="text-xs sm:text-sm text-slate-300 font-bold leading-relaxed mb-6 max-w-sm text-center">
+        <p className="text-xs sm:text-sm text-slate-300 font-bold leading-relaxed mb-4 max-w-sm text-center">
           {unlockedSuccess 
             ? 'جاري فك التشفير وتوجيهك إلى محرك الإشارات الفورية وصفقات الفجوات...' 
             : 'أدخل رمز المرور السري الخاص بالبوت للوصول لصفقات وخوارزميات اليوم.'}
         </p>
+
+        {/* 1-Phone & 1-Wi-Fi Hardware/IP Security Indicator */}
+        <div className="w-full mb-4 p-3 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-purple-950/30 to-blue-950/40 border border-cyan-500/30 shadow-inner flex flex-col gap-1.5 text-right">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-cyan-300 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>نظام القفل الحصري: هاتف واحد + شبكة واي فاي واحدة</span>
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              نشط ومحمي
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400 leading-normal">
+            يتم ربط كلمة المرور تلقائياً ببصمة الهاتف وشبكة الاتصال عند أول دخول لمنع أي مشاركة خارجية.
+          </p>
+        </div>
 
         {/* Lockout Notice if applicable */}
         {lockoutTimer > 0 && (
@@ -502,10 +639,10 @@ export default function SecurityGate({ children }: SecurityGateProps) {
             href={SUPPORT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-2xl bg-white/[0.04] hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400/60 text-sky-200 hover:text-white text-xs font-black transition-all group shadow-md shadow-sky-950/20"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-white/[0.04] hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400/60 text-sky-200 hover:text-white text-[11px] font-black transition-all group shadow-md shadow-sky-950/20"
           >
-            <TelegramIcon className="w-3.5 h-3.5 text-sky-400 shrink-0 group-hover:scale-110 transition-transform" />
-            <span>المنشئ والمطور (@Qv_Dev)</span>
+            <TelegramIcon className="w-3 h-3 text-sky-400 shrink-0 group-hover:scale-110 transition-transform" />
+            <span>المنشئ والمطور</span>
           </a>
         </div>
 

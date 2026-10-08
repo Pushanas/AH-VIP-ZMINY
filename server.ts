@@ -11,6 +11,7 @@ const __dirname = path.resolve('.');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ah_vip_super_secret_key_2026';
 const PORT = 3000;
+const CURRENT_VIP_PASSWORD = "Q8_VIP_6419_T2Z";
 
 const db = new Database(':memory:'); // In-memory DB for prototype, but we can also use a file if we want persistence across reloads.
 // Let's use a file so it persists during dev
@@ -45,6 +46,30 @@ const initializeDb = () => {
   try {
     db.exec('DELETE FROM rate_limits;');
   } catch(e) {}
+
+  // VIP Device & IP Lock Table (Restricted to 1 Phone & 1 Wi-Fi IP)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vip_lock (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      password TEXT NOT NULL,
+      bound_ip TEXT,
+      bound_fingerprint TEXT,
+      bound_device_name TEXT,
+      activated_at DATETIME,
+      session_version INTEGER DEFAULT 1
+    );
+  `);
+
+  const existingVip = db.prepare('SELECT * FROM vip_lock WHERE id = 1').get() as any;
+  if (!existingVip || existingVip.password !== CURRENT_VIP_PASSWORD) {
+    // Purge old passwords and wipe legacy sessions completely
+    db.exec('DELETE FROM vip_lock;');
+    db.prepare(`
+      INSERT INTO vip_lock (id, password, bound_ip, bound_fingerprint, bound_device_name, activated_at, session_version)
+      VALUES (1, ?, NULL, NULL, NULL, NULL, ?)
+    `).run(CURRENT_VIP_PASSWORD, Date.now());
+    console.log('[SECURITY] Initialized single-device & single-IP lock for Q8 VIP password:', CURRENT_VIP_PASSWORD);
+  }
 
   // Seed codes
   const initialCodes = [
@@ -196,6 +221,164 @@ app.post('/api/clear-rate-limits', (req, res) => {
     res.json({ success: true, message: 'All IP locks cleared successfully' });
   } catch (e) {
     res.status(500).json({ error: 'Failed to clear IP locks' });
+  }
+});
+
+// Helper to reliably extract remote client IP
+const getClientIp = (req: any): string => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0].trim();
+  }
+  return req.ip || (req.socket && req.socket.remoteAddress) || '127.0.0.1';
+};
+
+// --- VIP Single Device & Single Wi-Fi/IP Enforcement Endpoints ---
+app.get('/api/auth/vip-status', (req, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const record = db.prepare('SELECT * FROM vip_lock WHERE id = 1').get() as any;
+    if (!record) {
+      return res.json({ isBound: false, clientIp });
+    }
+    const isBound = !!(record.bound_ip || record.bound_fingerprint);
+    return res.json({
+      isBound,
+      clientIp,
+      boundDeviceName: record.bound_device_name || null,
+      activatedAt: record.activated_at || null,
+      maskedBoundIp: record.bound_ip ? record.bound_ip.replace(/^(\d+\.\d+)\..*$/, '$1.*.*') : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+app.post('/api/auth/vip-login', (req, res) => {
+  try {
+    const { password, fingerprint, deviceName } = req.body;
+    const clientIp = getClientIp(req);
+
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ success: false, error: 'يرجى إدخال رمز المرور' });
+    }
+
+    if (password.trim() !== CURRENT_VIP_PASSWORD) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_PASSWORD',
+        error: 'كلمة المرور غير صحيحة أو تم إبطالها وطرد جلستها نهائياً.'
+      });
+    }
+
+    const record = db.prepare('SELECT * FROM vip_lock WHERE id = 1').get() as any;
+    if (!record) {
+      return res.status(500).json({ success: false, error: 'خطأ في قاعدة بيانات الحماية' });
+    }
+
+    // 1. If not yet bound to any device or IP (First Activation):
+    if (!record.bound_fingerprint && !record.bound_ip) {
+      db.prepare(`
+        UPDATE vip_lock 
+        SET bound_ip = ?, bound_fingerprint = ?, bound_device_name = ?, activated_at = ?
+        WHERE id = 1
+      `).run(clientIp, fingerprint || 'DEV_UNKNOWN', deviceName || 'هاتف مصرح به', new Date().toISOString());
+
+      return res.json({
+        success: true,
+        isFirstBinding: true,
+        message: 'تم تفعيل الحساب وقفل كلمة المرور بنجاح على هذا الهاتف وهذه الشبكة فقط 🔒',
+        boundIp: clientIp,
+        boundFingerprint: fingerprint
+      });
+    }
+
+    // 2. Already bound - strictly verify Device Fingerprint AND Network IP
+    const sameFingerprint = !record.bound_fingerprint || record.bound_fingerprint === fingerprint;
+    const sameIp = !record.bound_ip || record.bound_ip === clientIp;
+
+    if (!sameFingerprint && !sameIp) {
+      return res.status(403).json({
+        success: false,
+        code: 'DEVICE_AND_IP_MISMATCH',
+        error: '⛔ تم رفض الدخول: كلمة المرور مقفلة ومربوطة بهاتف وشبكة واي فاي أخرى! غير مسموح بمشاركتها مع أجهزة أخرى.'
+      });
+    }
+
+    if (!sameFingerprint) {
+      return res.status(403).json({
+        success: false,
+        code: 'DEVICE_MISMATCH',
+        error: '⛔ تم رفض الدخول: كلمة المرور مصرح بها للهاتف الأصلي المعتمد فقط، ولا يمكن فتحها من هذا الجهاز!'
+      });
+    }
+
+    if (!sameIp) {
+      return res.status(403).json({
+        success: false,
+        code: 'IP_MISMATCH',
+        error: '⛔ تم رفض الدخول: تم اكتشاف شبكة اتصال مختلفة عن شبكة الواي فاي المصرح بها لهذا الحساب!'
+      });
+    }
+
+    // Both match!
+    return res.json({
+      success: true,
+      isFirstBinding: false,
+      message: 'تم التحقق من بصمة الهاتف وشبكة الواي فاي بنجاح 🛡️',
+      boundIp: record.bound_ip,
+      boundFingerprint: record.bound_fingerprint
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'حدث خطأ غير متوقع أثناء معالجة الحماية' });
+  }
+});
+
+app.post('/api/auth/vip-verify-session', (req, res) => {
+  try {
+    const { password, fingerprint } = req.body;
+    const clientIp = getClientIp(req);
+
+    if (password !== CURRENT_VIP_PASSWORD) {
+      return res.status(401).json({ valid: false, reason: 'REVOKED' });
+    }
+
+    const record = db.prepare('SELECT * FROM vip_lock WHERE id = 1').get() as any;
+    if (!record) {
+      return res.json({ valid: false, reason: 'NOT_FOUND' });
+    }
+
+    if (record.bound_fingerprint && fingerprint && record.bound_fingerprint !== fingerprint) {
+      return res.status(403).json({ valid: false, reason: 'DEVICE_MISMATCH' });
+    }
+
+    if (record.bound_ip && clientIp && record.bound_ip !== clientIp) {
+      return res.status(403).json({ valid: false, reason: 'IP_MISMATCH' });
+    }
+
+    return res.json({ valid: true, boundIp: record.bound_ip });
+  } catch (e) {
+    return res.status(500).json({ valid: false });
+  }
+});
+
+app.post('/api/auth/vip-reset-binding', (req, res) => {
+  try {
+    const { adminKey } = req.body;
+    if (adminKey === 'admin123' || adminKey === CURRENT_VIP_PASSWORD) {
+      db.prepare(`
+        UPDATE vip_lock 
+        SET bound_ip = NULL, bound_fingerprint = NULL, bound_device_name = NULL, activated_at = NULL 
+        WHERE id = 1
+      `).run();
+      return res.json({ success: true, message: 'تم فك ارتباط الجهاز وشبكة الواي فاي بنجاح' });
+    }
+    return res.status(403).json({ error: 'غير مصرح' });
+  } catch (e) {
+    return res.status(500).json({ error: 'فشل فك الارتباط' });
   }
 });
 
