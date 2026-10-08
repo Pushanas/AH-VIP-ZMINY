@@ -24,9 +24,10 @@ import {
 } from 'lucide-react';
 
 // New high-entropy quantum-grade VIP random password (Q8 Identity)
-const REQUIRED_PASSWORD = "Q8_VIP_8492_Z3K";
-const AUTH_STORAGE_KEY = "q8_vip_auth_pass_v5_quantum_final";
+const REQUIRED_PASSWORD = "Q8_VIP_3095_X7W";
+const AUTH_STORAGE_KEY = "q8_vip_auth_pass_v6_quantum_v2";
 const LEGACY_STORAGE_KEYS = [
+  'q8_vip_auth_pass_v5_quantum_final',
   'ah_vip_auth_pass_v4_ultra_quantum',
   'ah_vip_auth_pass_v3_secure',
   'ah_vip_auth_pass_v2',
